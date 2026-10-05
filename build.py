@@ -198,6 +198,9 @@ Questo è un <strong>estratto non ufficiale: fa fede l'avviso ANAC</strong>, a c
 <p>{e(SOURCE)}: <a href="https://pubblicitalegale.anticorruzione.it">pubblicitalegale.anticorruzione.it</a>.
 Riutilizzo ai sensi della licenza CC BY 4.0 e dell'art. 7 del d.lgs. 33/2013, senza alterare il contenuto degli avvisi.
 Regioni: elenco dei comuni italiani di ISTAT, CC BY.</p>
+<p>Il codice è aperto (licenza MIT): <a href="https://github.com/ossian-cloud/bandi-feed">github.com/ossian-cloud/bandi-feed</a>.
+Segnalazioni e richieste: <a href="https://github.com/ossian-cloud/bandi-feed/issues">issue su GitHub</a> o
+<a href="mailto:ossian@ossian.cloud">ossian@ossian.cloud</a>.</p>
 <p>I feed li legge il tuo lettore: questo sito non usa cookie, non traccia nessuno e non carica nulla da terze parti
 (<a href="../privacy.html">privacy</a>).</p>
 
