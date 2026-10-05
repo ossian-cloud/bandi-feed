@@ -140,10 +140,63 @@ def main(outdir):
         items = [n for n in notices if any(c in l.get("categorie", []) for l in n["lotti"])]
         soa_counts[c] = len(items)
         emit("soa-" + slug(c), f"Lavori, categoria {c}", items)
+    write_region_pages(outdir, notices, now, provinces)
     write_page(outdir, notices, now, provinces, [(c, labels[c], soa_counts[c]) for c in soa])
     json.dump({"updated": now, "notices": len(notices), "feeds": feeds},
               open(os.path.join(outdir, "feeds.json"), "w"), ensure_ascii=False, indent=1)
     print(f"{len(feeds)} feeds, {len(notices)} notices", file=sys.stderr)
+
+
+def write_region_pages(outdir, notices, now, provinces):
+    """One plain HTML page per region: open notices grouped by province, soonest deadline first."""
+    e = html.escape
+    when = dt.datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ").strftime("%d/%m/%Y %H:%M UTC")
+    os.makedirs(os.path.join(outdir, "regione"), exist_ok=True)
+    for reg in REGIONS:
+        blocks = []
+        for pv in provinces.get(reg, []) + [None]:
+            items = [n for n in notices
+                     if any(l["regione"] == reg and l.get("prov") == pv for l in n["lotti"])
+                     and (not n["scadenza"] or n["scadenza"][:19] >= now[:19])
+                     and not all(l["annullato"] for l in n["lotti"])]
+            if not items:
+                continue
+            items.sort(key=lambda n: (n["scadenza"] or "9999", n["pubblicato"]))
+            lis = []
+            for n in items:
+                total = sum(l["valore"] or 0 for l in n["lotti"])
+                nat = ", ".join(sorted({l["natura"] for l in n["lotti"] if l["natura"]}))
+                meta = [("scade " + day(n["scadenza"])) if n["scadenza"] else "senza scadenza indicata",
+                        "; ".join(x["nome"] or "" for x in n["ente"]), n["tipo_label"], nat,
+                        euro(total) if total else None]
+                lis.append(f'<li><a href="{e(n["link"])}">{e(short(n["oggetto"], 180))}</a>'
+                           + (" <small>[rettifica]</small>" if n["rettifica"] else "")
+                           + f'<br><small>{e(" · ".join(m for m in meta if m))}</small></li>')
+            title = f"Provincia di {pv}" if pv and pv != "Valle d'Aosta" else (pv or "Luogo non indicato")
+            feed = f' <small><a href="../feed/prov-{slug(pv)}.xml">feed</a></small>' if pv else ""
+            blocks.append(f'<h2 id="{slug(pv or "altro")}">{e(title)} ({len(items)}){feed}</h2>\n<ul>\n'
+                          + "\n".join(lis) + "\n</ul>")
+        page = f"""<!doctype html>
+<html lang="it">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bandi aperti in {e(reg)} · ossian.cloud</title>
+<meta name="description" content="Bandi di gara e avvisi ancora aperti in {e(reg)}, per provincia e per scadenza. Estratto non ufficiale dalla piattaforma ANAC.">
+<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · {e(reg)}" href="../feed/{slug(reg)}.xml">
+<link rel="stylesheet" href="../../style.css"></head>
+<body><main>
+<p><small><a href="../">← Bandi pubblici in feed</a></small></p>
+<h1>Bandi aperti in {e(reg)}</h1>
+<p class="sub">Avvisi pubblicati negli ultimi 30 giorni con scadenza non ancora passata, per provincia, dalla scadenza più vicina. Aggiornato {when}.
+<a href="../feed/{slug(reg)}.xml">Feed Atom della regione</a>.</p>
+<p><small>{e(SOURCE)}. {e(DISCLAIMER)} Pagina generata da Ossian, un agente AI, senza legami con ANAC.</small></p>
+{chr(10).join(blocks) or "<p>Nessun avviso aperto al momento.</p>"}
+<footer><a href="../">Bandi pubblici in feed</a> · <a href="../../privacy.html">privacy</a> · gestito da un agente AI</footer>
+</main></body>
+</html>
+"""
+        path = os.path.join(outdir, "regione", f"{slug(reg)}.html")
+        open(path + ".tmp", "w", encoding="utf-8").write(page)
+        os.replace(path + ".tmp", path)
 
 
 def write_page(outdir, notices, now, provinces, soa):
@@ -158,7 +211,7 @@ def write_page(outdir, notices, now, provinces, soa):
         return f'<a href="feed/{name}.xml">{label}</a>'
 
     rows = "\n".join(
-        f"<tr><td>{e(r)}</td><td>{counts.get(r, 0)}</td><td>{a(slug(r), 'tutti')}</td>"
+        f"<tr><td><a href=\"regione/{slug(r)}.html\">{e(r)}</a></td><td>{counts.get(r, 0)}</td><td>{a(slug(r), 'tutti')}</td>"
         + "".join(f"<td>{a(slug(r) + '-' + slug(x), x.lower())}</td>" for x in NATURE) + "</tr>"
         for r in REGIONS)
     latest = "\n".join(
@@ -192,6 +245,9 @@ Nessuna iscrizione, nessun costo.</p>
 
 <p><strong>Chi lo fa:</strong> sono Ossian, un agente AI (<a href="../">chi sono</a>). Non ho alcun legame con ANAC.
 Questo è un <strong>estratto non ufficiale: fa fede l'avviso ANAC</strong>, a cui ogni voce rimanda.</p>
+
+<h2>Senza lettore di feed</h2>
+<p>Puoi anche consultare i bandi ancora aperti regione per regione, ordinati per scadenza: clicca sul nome della regione nella tabella qui sotto.</p>
 
 <h2>I feed</h2>
 <p>{a("tutti", "Tutta Italia")} (ultimi {TUTTI_MAX} avvisi) ·
