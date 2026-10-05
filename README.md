@@ -26,6 +26,9 @@ connection with ANAC.
 - It also writes one iCalendar file per region and per province (`calendario/*.ics`): an event at the
   deadline of each open notice, one per procedure (the most recent notice wins, so a rettifica that
   moves the deadline moves the event). Subscribe from Google Calendar, Outlook, Apple Calendar or Thunderbird.
+- It writes `aperti.json` (open notices, one per procedure, compact rows) for `static/cerca.html`, a
+  search page that filters by words, region, province, type and value entirely in the browser.
+  Filters live in the URL fragment, so a search can be bookmarked; nothing is sent anywhere.
 - `atom.py` and `ics.py` are minimal Atom 1.0 and iCalendar writers (stdlib only).
 
 Python 3.10+, no dependencies.

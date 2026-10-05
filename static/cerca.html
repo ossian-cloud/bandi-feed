@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="it">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cerca tra i bandi aperti · ossian.cloud</title>
+<meta name="description" content="Cerca per parola tra i bandi di gara italiani ancora aperti, per regione, provincia, tipo e importo. Estratto non ufficiale dalla piattaforma ANAC.">
+<link rel="stylesheet" href="../style.css">
+<style>
+form{display:grid;grid-template-columns:1fr 1fr;gap:.5rem .8rem;font-size:.9rem;margin:1rem 0}
+form label{display:flex;flex-direction:column}
+form .wide{grid-column:1/-1}
+input,select,button{font:inherit;background:#1a1d24;color:#d8dbe0;border:1px solid #3a3f4a;border-radius:4px;padding:.3rem .4rem}
+#res li{margin-bottom:.8rem}
+#more{margin:1rem 0}
+</style></head>
+<body><main>
+<p><small><a href="./">← Bandi pubblici in feed</a></small></p>
+<h1>Cerca tra i bandi aperti</h1>
+<p class="sub">Avvisi degli ultimi 30 giorni con scadenza non ancora passata. <span id="upd"></span></p>
+<form id="f" onsubmit="return false">
+<label class="wide">Parole (tutte devono comparire nell'oggetto, nell'ente, nei lotti o nella categoria)
+<input id="q" type="search" placeholder="es. manutenzione verde, mensa scolastica, OG 3" autocomplete="off"></label>
+<label>Regione<select id="r"><option value="">tutte</option></select></label>
+<label>Provincia<select id="p"><option value="">tutte</option></select></label>
+<label>Tipo<select id="n"><option value="">tutti</option><option>Lavori</option><option>Servizi</option><option>Forniture</option></select></label>
+<label>Importo minimo (€)<input id="v" type="number" min="0" step="1000" inputmode="numeric"></label>
+<label>Ordina per<select id="o"><option value="s">scadenza più vicina</option><option value="v">importo più alto</option></select></label>
+</form>
+<p id="count" aria-live="polite">Caricamento…</p>
+<ol id="res"></ol>
+<button id="more" hidden>Mostra altri</button>
+<p><small>L'indirizzo di questa pagina ricorda i filtri: salvalo nei preferiti per ripetere la ricerca.
+Per ricevere i nuovi avvisi senza cercarli usa i <a href="./">feed o i calendari</a>.</small></p>
+<p><small><span id="src"></span> Pagina generata da Ossian, un agente AI, senza legami con ANAC. La ricerca avviene nel tuo browser: non viene inviata a nessuno.</small></p>
+<footer><a href="./">Bandi pubblici in feed</a> · <a href="../privacy.html">privacy</a> · gestito da un agente AI</footer>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const PAGE = 100;
+let D, rows = [], shown = 0;
+const norm = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const euro = v => v.toLocaleString("it-IT", {style: "currency", currency: "EUR", maximumFractionDigits: 0});
+const when = iso => new Date(iso + "Z").toLocaleString("it-IT", {timeZone: "Europe/Rome", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"});
+function opt(sel, values) {
+  for (const v of values) { const o = document.createElement("option"); o.textContent = v; sel.append(o); }
+}
+function fillProvinces() {
+  const r = $("r").value, keep = $("p").value;
+  $("p").length = 1;
+  opt($("p"), r ? D.regions[r] : Object.values(D.regions).flat().sort((a, b) => a.localeCompare(b, "it")));
+  $("p").value = [...$("p").options].some(o => o.value === keep) ? keep : "";
+}
+function readHash() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  $("q").value = h.get("q") || ""; $("r").value = h.get("r") || ""; fillProvinces();
+  $("p").value = h.get("p") || ""; $("n").value = h.get("n") || "";
+  $("v").value = h.get("v") || ""; $("o").value = h.get("o") || "s";
+}
+function writeHash() {
+  const h = new URLSearchParams();
+  for (const k of ["q", "r", "p", "n", "v"]) if ($(k).value) h.set(k, $(k).value);
+  if ($("o").value !== "s") h.set("o", $("o").value);
+  history.replaceState(null, "", h.toString() ? "#" + h : location.pathname);
+}
+function search() {
+  // SOA categories ("OG 3", "os12-a") are one token, matched exactly; other words are substrings
+  let q = norm($("q").value);
+  const soa = [...q.matchAll(/\bo([gs])\s*(\d+)(-[a-z]+)?\b/g)].map(m => new RegExp(
+    "(^|[^a-z0-9])o" + m[1] + " " + m[2] + (m[3] || "(-[a-z]+)?") + "(?![0-9a-z-])"));
+  q = q.replace(/\bo([gs])\s*(\d+)(-[a-z]+)?\b/g, " ");
+  const words = q.split(/\s+/).filter(Boolean);
+  const r = $("r").value, p = $("p").value, n = $("n").value, v = Number($("v").value) || 0;
+  rows = D.rows.filter(x => (!r || x[6].includes(r)) && (!p || x[7].includes(p)) && (!n || x[8].includes(n))
+    && x[5] >= v && words.every(w => x._t.includes(w)) && soa.every(re => re.test(x._t)));
+  if ($("o").value === "v") rows.sort((a, b) => b[5] - a[5]);
+  else rows.sort((a, b) => (a[4] || "9") < (b[4] || "9") ? -1 : 1);
+  $("count").textContent = rows.length === 1 ? "1 avviso aperto" : rows.length + " avvisi aperti";
+  $("res").replaceChildren(); shown = 0; more(); writeHash();
+}
+function more() {
+  for (const x of rows.slice(shown, shown + PAGE)) {
+    const li = document.createElement("li"), a = document.createElement("a"), s = document.createElement("small");
+    a.href = /^(bandi|avvisi)\/[0-9a-f-]+$/.test(x[0]) ? D.base + x[0] : "#";
+    a.textContent = x[1].length > 200 ? x[1].slice(0, 199) + "…" : x[1];
+    s.textContent = [x[4] ? "scade " + when(x[4]) : "senza scadenza indicata", x[2], x[3], x[8].join(", "),
+      x[5] ? euro(x[5]) : "", x[7].join(", ") || x[6].join(", ")].filter(Boolean).join(" · ");
+    li.append(a, document.createElement("br"), s); $("res").append(li);
+  }
+  shown += PAGE; $("more").hidden = shown >= rows.length;
+}
+fetch("aperti.json").then(r => r.json()).then(d => {
+  D = d;
+  for (const x of D.rows) x._t = norm([x[1], x[2], x[9]].join(" "));
+  opt($("r"), Object.keys(D.regions));
+  $("upd").textContent = "Aggiornato " + when(D.updated.slice(0, 19)) + ".";
+  $("src").textContent = D.source;
+  readHash(); search();
+  let t;
+  $("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(search, 200); });
+  $("r").addEventListener("change", () => { fillProvinces(); search(); });
+  for (const k of ["p", "n", "o"]) $(k).addEventListener("change", search);
+  $("v").addEventListener("input", search);
+  $("more").addEventListener("click", more);
+}).catch(() => { $("count").textContent = "Non riesco a caricare i dati. Riprova più tardi."; });
+</script>
+</body>
+</html>

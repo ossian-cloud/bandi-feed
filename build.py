@@ -7,6 +7,7 @@ import html
 import json
 import os
 import re
+import shutil
 import sys
 
 import geo
@@ -143,6 +144,7 @@ def main(outdir):
         emit("soa-" + slug(c), f"Lavori, categoria {c}", items)
     write_region_pages(outdir, notices, now, provinces)
     write_calendars(outdir, notices, now, provinces)
+    write_search(outdir, notices, now)
     write_page(outdir, notices, now, provinces, [(c, labels[c], soa_counts[c]) for c in soa])
     json.dump({"updated": now, "notices": len(notices), "feeds": feeds},
               open(os.path.join(outdir, "feeds.json"), "w"), ensure_ascii=False, indent=1)
@@ -198,6 +200,43 @@ def write_calendars(outdir, notices, now, provinces):
                  [n for n in dated if any(l.get("prov") == pv for l in n["lotti"])])
 
 
+PVL = "https://pubblicitalegale.anticorruzione.it/"
+
+
+def write_search(outdir, notices, now):
+    """Data for the static search page (static/cerca.html): open notices, one per procedure, as compact rows.
+    Row: [link (without PVL prefix), oggetto, enti, tipo, scadenza ISO or "", total value, regions, provinces,
+    natures, extra searchable text (lot descriptions, CPV labels, SOA categories)]."""
+    seen, rows = set(), []
+    for n in open_notices(notices, now):
+        if n["appalto"] in seen:
+            continue
+        seen.add(n["appalto"])
+        lots = n["lotti"]
+        extra = []
+        for l in lots:
+            for t in [l["descrizione"], l["cpv"]] + [c for c in l.get("categorie", []) if re.match(r"O[GS] ", c)]:
+                if t and t not in extra and t != n["oggetto"]:
+                    extra.append(t)
+        rows.append([n["link"].removeprefix(PVL), n["oggetto"] or "",
+                     "; ".join(x["nome"] or "" for x in n["ente"]),
+                     n["tipo_label"] + (" (rettifica)" if n["rettifica"] else ""),
+                     (n["scadenza"] or "")[:19], round(sum(l["valore"] or 0 for l in lots)),
+                     sorted({l["regione"] for l in lots if l["regione"]}),
+                     sorted({l["prov"] for l in lots if l.get("prov")}),
+                     sorted({l["natura"] for l in lots if l["natura"]}),
+                     short(" · ".join(extra), 700)])
+    provinces = {}
+    for p, r in geo._BY_PROV.items():
+        provinces.setdefault(r, []).append(geo.PROV_LABEL[p])
+    data = {"updated": now, "base": PVL, "source": f"{SOURCE}. {DISCLAIMER}",
+            "regions": {r: sorted(provinces.get(r, [])) for r in REGIONS}, "rows": rows}
+    tmp = os.path.join(outdir, "aperti.json.tmp")
+    json.dump(data, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+    os.replace(tmp, os.path.join(outdir, "aperti.json"))
+    shutil.copy(os.path.join(HERE, "static", "cerca.html"), os.path.join(outdir, "cerca.html"))
+
+
 def write_region_pages(outdir, notices, now, provinces):
     """One plain HTML page per region: open notices grouped by province, soonest deadline first."""
     e = html.escape
@@ -234,7 +273,7 @@ def write_region_pages(outdir, notices, now, provinces):
 <link rel="alternate" type="application/atom+xml" title="Bandi pubblici · {e(reg)}" href="../feed/{slug(reg)}.xml">
 <link rel="stylesheet" href="../../style.css"></head>
 <body><main>
-<p><small><a href="../">← Bandi pubblici in feed</a></small></p>
+<p><small><a href="../">← Bandi pubblici in feed</a> · <a href="../cerca.html#r={e(reg)}">cerca in {e(reg)}</a></small></p>
 <h1>Bandi aperti in {e(reg)}</h1>
 <p class="sub">Avvisi pubblicati negli ultimi 30 giorni con scadenza non ancora passata, per provincia, dalla scadenza più vicina. Aggiornato {when}.
 <a href="../feed/{slug(reg)}.xml">Feed Atom della regione</a> ·
@@ -299,7 +338,9 @@ Nessuna iscrizione, nessun costo.</p>
 Questo è un <strong>estratto non ufficiale: fa fede l'avviso ANAC</strong>, a cui ogni voce rimanda.</p>
 
 <h2>Senza lettore di feed</h2>
-<p>Puoi anche consultare i bandi ancora aperti regione per regione, ordinati per scadenza: clicca sul nome della regione nella tabella qui sotto.</p>
+<p><strong><a href="cerca.html">Cerca tra i bandi aperti</a></strong> per parola, regione, provincia, tipo e importo
+(per esempio <a href="cerca.html#q=manutenzione+verde">manutenzione verde</a> o <a href="cerca.html#q=OG+3&amp;n=Lavori">lavori OG 3</a>).
+Oppure consulta i bandi ancora aperti regione per regione, ordinati per scadenza: clicca sul nome della regione nella tabella qui sotto.</p>
 
 <h2 id="calendario">Le scadenze nel tuo calendario</h2>
 <p>Per ogni regione e ogni provincia c'è un calendario (formato iCalendar) con le scadenze dei bandi ancora aperti:
