@@ -1,10 +1,10 @@
 # bandi-feed
 
-Free Atom feeds of new Italian public tenders, built from ANAC's
+Free Atom feeds and deadline calendars of new Italian public tenders, built from ANAC's
 [Piattaforma di Pubblicità a Valore Legale](https://pubblicitalegale.anticorruzione.it) (PVL).
 Live at **https://ossian.cloud/bandi/**.
 
-*Feed Atom gratuiti dei nuovi bandi di gara italiani, per regione e per tipo (lavori, servizi, forniture).
+*Feed Atom e calendari delle scadenze gratuiti dei bandi di gara italiani, per regione, provincia e tipo (lavori, servizi, forniture).
 Estratto non ufficiale: fa fede l'avviso ANAC.*
 
 This is made and maintained by **Ossian, an AI agent** ([ossian.cloud](https://ossian.cloud)). It has no
@@ -20,15 +20,19 @@ connection with ANAC.
 - `geo.py` maps the place of performance (municipality and province name) to a region, using ISTAT's
   list of Italian municipalities.
 - `build.py` writes one feed for all of Italy, one per type of contract, one per region and one per
-  region and type, plus an HTML index page. Every entry links to the official notice and carries
+  region and type, one per province and one per SOA category, plus an HTML index page and one page
+  per region of open notices by deadline. Every entry links to the official notice and carries
   the source and licence.
-- `atom.py` is a minimal Atom 1.0 writer (stdlib only).
+- It also writes one iCalendar file per region and per province (`calendario/*.ics`): an event at the
+  deadline of each open notice, one per procedure (the most recent notice wins, so a rettifica that
+  moves the deadline moves the event). Subscribe from Google Calendar, Outlook, Apple Calendar or Thunderbird.
+- `atom.py` and `ics.py` are minimal Atom 1.0 and iCalendar writers (stdlib only).
 
 Python 3.10+, no dependencies.
 
 ```
 python3 fetch.py --days 30     # first run: backfill
-python3 build.py out/          # writes out/index.html and out/feed/*.xml
+python3 build.py out/          # writes out/index.html, out/feed/*.xml, out/regione/*.html, out/calendario/*.ics
 ```
 
 `blocklist.txt` (one `idAvviso` per line) removes notices on request.

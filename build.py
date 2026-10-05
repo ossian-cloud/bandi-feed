@@ -11,6 +11,7 @@ import sys
 
 import geo
 from atom import write_feed
+from ics import write_calendar
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data", "notices.json")
@@ -141,10 +142,60 @@ def main(outdir):
         soa_counts[c] = len(items)
         emit("soa-" + slug(c), f"Lavori, categoria {c}", items)
     write_region_pages(outdir, notices, now, provinces)
+    write_calendars(outdir, notices, now, provinces)
     write_page(outdir, notices, now, provinces, [(c, labels[c], soa_counts[c]) for c in soa])
     json.dump({"updated": now, "notices": len(notices), "feeds": feeds},
               open(os.path.join(outdir, "feeds.json"), "w"), ensure_ascii=False, indent=1)
     print(f"{len(feeds)} feeds, {len(notices)} notices", file=sys.stderr)
+
+
+def open_notices(notices, now):
+    """Notices whose deadline hasn't passed and that aren't fully cancelled."""
+    return [n for n in notices
+            if (not n["scadenza"] or n["scadenza"][:19] >= now[:19])
+            and not all(l["annullato"] for l in n["lotti"])]
+
+
+def write_calendars(outdir, notices, now, provinces):
+    """One .ics per region and per province: an event at each open notice's deadline.
+    A procedure (appalto) appears once, with its most recent notice (rettifiche can move deadlines)."""
+    seen, dated = set(), []
+    for n in open_notices(notices, now):  # newest first
+        if n["scadenza"] and n["appalto"] not in seen:
+            seen.add(n["appalto"])
+            dated.append(n)
+    dated.sort(key=lambda n: n["scadenza"])
+    os.makedirs(os.path.join(outdir, "calendario"), exist_ok=True)
+
+    def event(n):
+        total = sum(l["valore"] or 0 for l in n["lotti"])
+        places = ", ".join(sorted({l["comune"] for l in n["lotti"] if l.get("comune")}))
+        desc = "\n".join(x for x in [
+            n["oggetto"], "",
+            "Ente: " + "; ".join(x["nome"] or "" for x in n["ente"]),
+            f"{n['tipo_label']}" + (" (rettifica)" if n["rettifica"] else "")
+            + (f" · procedura {n['procedura'].lower()}" if n["procedura"] else ""),
+            ("Valore stimato: " + euro(total)) if total else None,
+            ("Luogo: " + places) if places else None,
+            "CIG: " + ", ".join(l["cig"] for l in n["lotti"] if l.get("cig")),
+            "", "Avviso ufficiale: " + n["link"],
+            ("Documenti di gara: " + n["documenti"]) if n.get("documenti") else None,
+            "", f"{SOURCE}. {DISCLAIMER} Calendario generato da Ossian, un agente AI.",
+        ] if x is not None)
+        return {"uid": f"{n['appalto']}@ossian.cloud", "start": n["scadenza"], "url": n["link"],
+                "summary": "Scadenza: " + short(n["oggetto"], 120), "description": desc}
+
+    def emit(name, label, items):
+        write_calendar(os.path.join(outdir, "calendario", f"{name}.ics"),
+                       name=f"Scadenze bandi · {label}",
+                       description=f"Scadenze dei bandi ancora aperti ({label}), da ANAC PVL. {SOURCE}. {DISCLAIMER}",
+                       stamp=now, events=[event(n) for n in items])
+
+    for reg in REGIONS:
+        emit(slug(reg), reg, [n for n in dated if any(l["regione"] == reg for l in n["lotti"])])
+        for pv in provinces.get(reg, []):
+            emit("prov-" + slug(pv), f"Provincia di {pv}" if pv != "Valle d'Aosta" else pv,
+                 [n for n in dated if any(l.get("prov") == pv for l in n["lotti"])])
 
 
 def write_region_pages(outdir, notices, now, provinces):
@@ -155,10 +206,8 @@ def write_region_pages(outdir, notices, now, provinces):
     for reg in REGIONS:
         blocks = []
         for pv in provinces.get(reg, []) + [None]:
-            items = [n for n in notices
-                     if any(l["regione"] == reg and l.get("prov") == pv for l in n["lotti"])
-                     and (not n["scadenza"] or n["scadenza"][:19] >= now[:19])
-                     and not all(l["annullato"] for l in n["lotti"])]
+            items = [n for n in open_notices(notices, now)
+                     if any(l["regione"] == reg and l.get("prov") == pv for l in n["lotti"])]
             if not items:
                 continue
             items.sort(key=lambda n: (n["scadenza"] or "9999", n["pubblicato"]))
@@ -173,7 +222,8 @@ def write_region_pages(outdir, notices, now, provinces):
                            + (" <small>[rettifica]</small>" if n["rettifica"] else "")
                            + f'<br><small>{e(" · ".join(m for m in meta if m))}</small></li>')
             title = f"Provincia di {pv}" if pv and pv != "Valle d'Aosta" else (pv or "Luogo non indicato")
-            feed = f' <small><a href="../feed/prov-{slug(pv)}.xml">feed</a></small>' if pv else ""
+            feed = (f' <small><a href="../feed/prov-{slug(pv)}.xml">feed</a> · '
+                    f'<a href="../calendario/prov-{slug(pv)}.ics">calendario</a></small>') if pv else ""
             blocks.append(f'<h2 id="{slug(pv or "altro")}">{e(title)} ({len(items)}){feed}</h2>\n<ul>\n'
                           + "\n".join(lis) + "\n</ul>")
         page = f"""<!doctype html>
@@ -187,7 +237,8 @@ def write_region_pages(outdir, notices, now, provinces):
 <p><small><a href="../">← Bandi pubblici in feed</a></small></p>
 <h1>Bandi aperti in {e(reg)}</h1>
 <p class="sub">Avvisi pubblicati negli ultimi 30 giorni con scadenza non ancora passata, per provincia, dalla scadenza più vicina. Aggiornato {when}.
-<a href="../feed/{slug(reg)}.xml">Feed Atom della regione</a>.</p>
+<a href="../feed/{slug(reg)}.xml">Feed Atom della regione</a> ·
+<a href="../calendario/{slug(reg)}.ics">calendario delle scadenze</a> (<a href="../#calendario">come si usa</a>).</p>
 <p><small>{e(SOURCE)}. {e(DISCLAIMER)} Pagina generata da Ossian, un agente AI, senza legami con ANAC.</small></p>
 {chr(10).join(blocks) or "<p>Nessun avviso aperto al momento.</p>"}
 <footer><a href="../">Bandi pubblici in feed</a> · <a href="../../privacy.html">privacy</a> · gestito da un agente AI</footer>
@@ -212,7 +263,8 @@ def write_page(outdir, notices, now, provinces, soa):
 
     rows = "\n".join(
         f"<tr><td><a href=\"regione/{slug(r)}.html\">{e(r)}</a></td><td>{counts.get(r, 0)}</td><td>{a(slug(r), 'tutti')}</td>"
-        + "".join(f"<td>{a(slug(r) + '-' + slug(x), x.lower())}</td>" for x in NATURE) + "</tr>"
+        + "".join(f"<td>{a(slug(r) + '-' + slug(x), x.lower())}</td>" for x in NATURE)
+        + f'<td><a href="calendario/{slug(r)}.ics">.ics</a> · <a href="{BASE.replace("https:", "webcal:")}/calendario/{slug(r)}.ics">webcal</a></td></tr>'
         for r in REGIONS)
     latest = "\n".join(
         f'<li><a href="{e(n["link"])}">{e(short(n["oggetto"], 140))}</a> '
@@ -234,7 +286,7 @@ def write_page(outdir, notices, now, provinces, soa):
 <link rel="stylesheet" href="../style.css"></head>
 <body><main>
 <h1>Bandi pubblici in feed</h1>
-<p class="sub">Feed gratuiti dei nuovi bandi di gara italiani, per regione e per tipo. Aggiornato {when}.</p>
+<p class="sub">Feed e calendari gratuiti dei nuovi bandi di gara italiani, per regione, provincia e tipo. Aggiornato {when}.</p>
 
 <p>Dal 2024 i bandi delle stazioni appaltanti italiane hanno pubblicità legale sulla
 <a href="https://pubblicitalegale.anticorruzione.it">Piattaforma di Pubblicità a Valore Legale</a> di ANAC.
@@ -249,11 +301,23 @@ Questo è un <strong>estratto non ufficiale: fa fede l'avviso ANAC</strong>, a c
 <h2>Senza lettore di feed</h2>
 <p>Puoi anche consultare i bandi ancora aperti regione per regione, ordinati per scadenza: clicca sul nome della regione nella tabella qui sotto.</p>
 
+<h2 id="calendario">Le scadenze nel tuo calendario</h2>
+<p>Per ogni regione e ogni provincia c'è un calendario (formato iCalendar) con le scadenze dei bandi ancora aperti:
+ogni evento è la scadenza di un avviso, con ente, valore, CIG e il link all'avviso ufficiale. Il calendario si aggiorna da solo.
+Trovi i link nella tabella qui sotto (colonna «calendario») e, per provincia, nelle pagine delle regioni.</p>
+<ul>
+<li><b>Google Calendar</b> (dal computer): Altri calendari → + → Da URL, incolla l'indirizzo del calendario.</li>
+<li><b>Outlook</b>: Aggiungi calendario → Sottoscrivi dal Web, incolla l'indirizzo.</li>
+<li><b>iPhone e Mac</b>: tocca il link «webcal» accanto al calendario, oppure Impostazioni → Calendario → Account → Aggiungi account → Altro → Aggiungi calendario sottoscritto.</li>
+<li><b>Thunderbird</b>: Nuovo calendario → Sulla rete, incolla l'indirizzo.</li>
+</ul>
+<p>Esempio di indirizzo: <code>{BASE}/calendario/lombardia.ics</code>. Le app di calendario aggiornano gli abbonamenti con i loro tempi (Google anche una volta al giorno), quindi un avviso appena pubblicato può comparire con qualche ora di ritardo.</p>
+
 <h2>I feed</h2>
 <p>{a("tutti", "Tutta Italia")} (ultimi {TUTTI_MAX} avvisi) ·
 {a("lavori", "Lavori")} · {a("servizi", "Servizi")} · {a("forniture", "Forniture")}</p>
 <table>
-<thead><tr><th>Regione</th><th>avvisi (30 gg)</th><th colspan="4">feed</th></tr></thead>
+<thead><tr><th>Regione</th><th>avvisi (30 gg)</th><th colspan="4">feed</th><th>calendario</th></tr></thead>
 <tbody>
 {rows}
 </tbody></table>
