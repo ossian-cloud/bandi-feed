@@ -23,6 +23,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data", "notices.json")
 BLOCKLIST = os.path.join(HERE, "blocklist.txt")  # idAvviso removed on request
 WINDOW_DAYS = 30
+CATS = os.path.join(HERE, "data", "categorie.json")  # SOA code -> label, as written by ANAC
+CAT_LABELS = json.load(open(CATS)) if os.path.exists(CATS) else {}
 
 # template number -> (group key, Italian label, detail-page root)
 GROUPS = {
@@ -82,7 +84,11 @@ def slim(item, template):
     gen = section(T, "SEZ. B").get("fields") or {}
     lots = []
     for it in section(T, "SEZ. C").get("items") or []:
+        for c in it.get("categorie") or []:
+            if c.get("codice") and c.get("descrizione"):
+                CAT_LABELS[c["codice"]] = c["descrizione"]
         comune, prov = it.get("luogo_istat"), it.get("luogo_nuts")
+        reg, pv = geo.place(comune, prov)
         lots.append({
             "cig": it.get("cig"),
             "descrizione": it.get("descrizione"),
@@ -91,7 +97,9 @@ def slim(item, template):
             "valore": num(it.get("valore_complessivo_stimato")),
             "comune": comune,
             "provincia": prov,
-            "regione": geo.region(comune, prov),
+            "regione": reg,
+            "prov": pv,
+            "categorie": [c["codice"] for c in it.get("categorie") or [] if c.get("codice")],
             "annullato": bool(it.get("comunicazione_annullamento_revoca")),
         })
     return {
@@ -144,10 +152,18 @@ def main():
 
     today = dt.date.today()
     days = [today - dt.timedelta(days=i) for i in range(args.days)]
-    added = 0
+    added = removed = 0
     try:
         for day in days:
             items = fetch_day(day, list(GROUPS))
+            # a notice that ANAC withdrew, censored or deactivated disappears here too
+            seen = {it["idAvviso"] for it in items
+                    if tmpl_of.get(it.get("codiceScheda")) in GROUPS and not it.get("oscurato")
+                    and it.get("attivo", True)}
+            gone = [k for k, v in db.items() if (v["pubblicato"] or "")[:10] == day.isoformat() and k not in seen]
+            for k in gone:
+                del db[k]
+            removed += len(gone)
             for it in items:
                 t = tmpl_of.get(it.get("codiceScheda"))
                 if t not in GROUPS or it.get("oscurato") or not it.get("attivo", True):
@@ -167,7 +183,7 @@ def main():
         sys.exit(2)
 
     save(db, blocked)
-    print(f"added {added}, total {len(db)}", file=sys.stderr)
+    print(f"added {added}, removed {removed}, total {len(db)}", file=sys.stderr)
 
 
 def save(db, blocked):
@@ -177,6 +193,7 @@ def save(db, blocked):
     tmp = DATA + ".tmp"
     json.dump(db, open(tmp, "w"), ensure_ascii=False)
     os.replace(tmp, DATA)
+    json.dump(CAT_LABELS, open(CATS, "w"), ensure_ascii=False, indent=0, sort_keys=True)
 
 
 if __name__ == "__main__":

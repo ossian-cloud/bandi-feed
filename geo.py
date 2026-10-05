@@ -11,6 +11,9 @@ def norm(s):
     return " ".join(s.upper().replace("'", " ").replace("-", " ").split())
 
 
+PROV_LABEL = {}  # normalized ISTAT province name -> display name
+
+
 def _load():
     by_comune, by_prov = {}, {}
     with open(REF, encoding="latin-1", newline="") as f:
@@ -20,11 +23,12 @@ def _load():
             if len(r) < 12:
                 continue
             region, prov = r[10].strip(), r[11].strip()
-            # region names like "Trentino-Alto Adige/Südtirol": keep the Italian part
-            region = region.split("/")[0]
+            # names like "Trentino-Alto Adige/Südtirol": keep the Italian part
+            region, label = region.split("/")[0], prov.split("/")[0]
             for name in {r[6], r[5]}:
                 by_comune.setdefault(norm(name), set()).add((region, norm(prov)))
             by_prov[norm(prov)] = region
+            PROV_LABEL[norm(prov)] = label
     return by_comune, by_prov
 
 
@@ -37,16 +41,21 @@ _PROV_ALIAS = {"BOLZANO": "BOLZANO/BOZEN", "AOSTA": "VALLE D AOSTA/VALLEE D AOST
                "OGLIASTRA": "NUORO", "OLBIA TEMPIO": "SASSARI"}
 
 
-def region(comune, provincia):
+def place(comune, provincia):
+    """-> (region, province display name), either may be None."""
     p = norm(provincia)
     p = _PROV_ALIAS.get(p, p)
     hits = _BY_COMUNE.get(norm(comune), set())
-    if len(hits) == 1:
-        return next(iter(hits))[0]
     if len(hits) > 1 and p:
-        regions = {r for r, pr in hits if pr == p or pr.startswith(p)}
-        if len(regions) == 1:
-            return regions.pop()
+        hits = {h for h in hits if h[1] == p or h[1].startswith(p)} or hits
+    if len(hits) == 1:
+        r, pr = next(iter(hits))
+        return r, PROV_LABEL[pr]
     if p in _BY_PROV:
-        return _BY_PROV[p]
-    return None
+        return _BY_PROV[p], PROV_LABEL[p]
+    regions = {r for r, _ in hits}
+    return (regions.pop() if len(regions) == 1 else None), None
+
+
+def region(comune, provincia):
+    return place(comune, provincia)[0]

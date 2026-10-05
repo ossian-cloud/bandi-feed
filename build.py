@@ -9,10 +9,12 @@ import os
 import re
 import sys
 
+import geo
 from atom import write_feed
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data", "notices.json")
+CATS = os.path.join(HERE, "data", "categorie.json")
 BASE = "https://ossian.cloud/bandi"
 SOURCE = "Fonte: ANAC, Piattaforma di Pubblicità a Valore Legale, CC BY 4.0"
 DISCLAIMER = "Estratto non ufficiale, fa fede l'avviso ANAC."
@@ -45,6 +47,11 @@ def short(s, n):
     return s if len(s) <= n else s[: n - 1].rstrip() + "…"
 
 
+def soa(lot):
+    cats = [c for c in lot.get("categorie", []) if re.match(r"O[GS] ", c)]
+    return "SOA " + ", ".join(cats) if cats else None
+
+
 def entry(n):
     e = html.escape
     flags = []
@@ -64,13 +71,13 @@ def entry(n):
     if len(n["lotti"]) > 1 or (n["lotti"] and n["lotti"][0]["descrizione"] != n["oggetto"]):
         parts.append(f"<p><b>Lotti ({len(n['lotti'])}):</b></p><ol>")
         for l in n["lotti"][:20]:
-            bits = [short(l["descrizione"], 200), l["natura"], l["cpv"],
+            bits = [short(l["descrizione"], 200), l["natura"], l["cpv"], soa(l),
                     euro(l["valore"]) if l["valore"] else None, f"CIG {l['cig']}" if l["cig"] else None]
             parts.append("<li>" + e(" · ".join(b for b in bits if b)) + "</li>")
         parts.append("</ol>")
     elif n["lotti"]:
         l = n["lotti"][0]
-        bits = [l["natura"], l["cpv"], f"CIG {l['cig']}" if l["cig"] else None]
+        bits = [l["natura"], l["cpv"], soa(l), f"CIG {l['cig']}" if l["cig"] else None]
         parts.append("<p>" + e(" · ".join(b for b in bits if b)) + "</p>")
     links = [f'<a href="{e(n["link"])}">Avviso ufficiale su ANAC PVL</a>']
     if n["documenti"]:
@@ -117,13 +124,29 @@ def main(outdir):
         for nat in NATURE:
             emit(f"{slug(reg)}-{slug(nat)}", f"{reg} · {nat}",
                  [n for n in in_reg if any(l["regione"] == reg and l["natura"] == nat for l in n["lotti"])])
-    write_page(outdir, notices, now)
+    provinces = {}  # region -> sorted province names
+    for p, r in geo._BY_PROV.items():
+        provinces.setdefault(r, []).append(geo.PROV_LABEL[p])
+    for r in provinces:
+        provinces[r].sort()
+        for pv in provinces[r]:
+            emit("prov-" + slug(pv), f"Provincia di {pv}" if pv != "Valle d'Aosta" else pv,
+                 [n for n in notices if any(l.get("prov") == pv for l in n["lotti"])])
+    labels = json.load(open(CATS)) if os.path.exists(CATS) else {}
+    soa = sorted((c for c in labels if re.match(r"O[GS] \d", c)),
+                 key=lambda c: (c[:2], int(re.search(r"\d+", c).group()), c))
+    soa_counts = {}
+    for c in soa:
+        items = [n for n in notices if any(c in l.get("categorie", []) for l in n["lotti"])]
+        soa_counts[c] = len(items)
+        emit("soa-" + slug(c), f"Lavori, categoria {c}", items)
+    write_page(outdir, notices, now, provinces, [(c, labels[c], soa_counts[c]) for c in soa])
     json.dump({"updated": now, "notices": len(notices), "feeds": feeds},
               open(os.path.join(outdir, "feeds.json"), "w"), ensure_ascii=False, indent=1)
     print(f"{len(feeds)} feeds, {len(notices)} notices", file=sys.stderr)
 
 
-def write_page(outdir, notices, now):
+def write_page(outdir, notices, now, provinces, soa):
     e = html.escape
     when = dt.datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ").strftime("%d/%m/%Y %H:%M UTC")
     counts = {}
@@ -143,6 +166,12 @@ def write_page(outdir, notices, now):
         f'<small>{e("; ".join(x["nome"] or "" for x in n["ente"]))} · {e(n["tipo_label"])}'
         + (f" · scade {day(n['scadenza'])}" if n["scadenza"] else "") + "</small></li>"
         for n in notices[:15])
+    prov_rows = "\n".join(
+        f"<li><b>{e(r)}:</b> " + " · ".join(a("prov-" + slug(p), e(p)) for p in provinces.get(r, [])) + "</li>"
+        for r in REGIONS)
+    soa_rows = "\n".join(
+        f"<li>{a('soa-' + slug(c), e(c))} {e(re.sub(r'^O[GS] [^ ]+ - ', '', lab).strip().capitalize())} ({k})</li>"
+        for c, lab, k in soa)
     page = f"""<!doctype html>
 <html lang="it">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -172,6 +201,18 @@ Questo è un <strong>estratto non ufficiale: fa fede l'avviso ANAC</strong>, a c
 <tbody>
 {rows}
 </tbody></table>
+
+<h2>Per provincia</h2>
+<p>La provincia è quella del comune di esecuzione.</p>
+<ul>
+{prov_rows}
+</ul>
+
+<h2>Lavori per categoria SOA</h2>
+<p>Per le imprese di costruzioni: un feed per ogni categoria SOA richiesta (prevalente o scorporabile). Tra parentesi gli avvisi degli ultimi 30 giorni.</p>
+<ul>
+{soa_rows}
+</ul>
 
 <h2>Cosa contengono</h2>
 <ul>
