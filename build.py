@@ -109,10 +109,11 @@ def entry(n):
 
 
 def clean(n):
-    """Fix two upstream quirks: HTML entities in free text, and "end of day" deadlines sent as 23:59 UTC."""
+    """Fix upstream quirks: HTML entities in free text, "end of day" deadlines sent as 23:59 UTC, odd place fields."""
     n["oggetto"] = html.unescape(n["oggetto"]) if n["oggetto"] else n["oggetto"]
     for l in n["lotti"]:
         l["descrizione"] = html.unescape(l["descrizione"]) if l["descrizione"] else l["descrizione"]
+        l["regione"], l["prov"] = geo.place(l["comune"], l["provincia"])  # so geo.py fixes apply to stored notices
     s = n["scadenza"]
     if s and s[10:16] == "T23:59" and s.endswith(("Z", "+00:00")):
         # meant as 23:59 Italian time on that date; reading it as UTC would move it past midnight

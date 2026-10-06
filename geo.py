@@ -15,7 +15,7 @@ PROV_LABEL = {}  # normalized ISTAT province name -> display name
 
 
 def _load():
-    by_comune, by_prov = {}, {}
+    by_comune, by_prov, by_code = {}, {}, {}
     with open(REF, encoding="latin-1", newline="") as f:
         rows = csv.reader(f, delimiter=";")
         next(rows)
@@ -27,12 +27,14 @@ def _load():
             region, label = region.split("/")[0], prov.split("/")[0]
             for name in {r[6], r[5]}:
                 by_comune.setdefault(norm(name), set()).add((region, norm(prov)))
+            by_code[r[4].strip()] = norm(r[6])
             by_prov[norm(prov)] = region
             PROV_LABEL[norm(prov)] = label
-    return by_comune, by_prov
+    return by_comune, by_prov, by_code
 
 
-_BY_COMUNE, _BY_PROV = _load()
+_BY_COMUNE, _BY_PROV, _BY_CODE = _load()
+_REGIONS = {norm(r): r for r in _BY_PROV.values()}
 # PVL uses some historical/short province names
 _PROV_ALIAS = {"BOLZANO": "BOLZANO/BOZEN", "AOSTA": "VALLE D AOSTA/VALLEE D AOSTE",
                "MONZA E BRIANZA": "MONZA E DELLA BRIANZA", "REGGIO EMILIA": "REGGIO NELL EMILIA", "MASSA CARRARA": "MASSA CARRARA",
@@ -42,10 +44,23 @@ _PROV_ALIAS = {"BOLZANO": "BOLZANO/BOZEN", "AOSTA": "VALLE D AOSTA/VALLEE D AOST
 
 
 def place(comune, provincia):
-    """-> (region, province display name), either may be None."""
+    """-> (region, province display name), either may be None.
+    PVL's "provincia" is sometimes a region name (it's a NUTS label), and its "comune" is sometimes
+    an ISTAT code or a bilingual "Italiano/Deutsch" name."""
     p = norm(provincia)
     p = _PROV_ALIAS.get(p, p)
-    hits = _BY_COMUNE.get(norm(comune), set())
+    c = (comune or "").strip()
+    if c.isdigit():
+        c = _BY_CODE.get(c[-6:].zfill(6), c)
+    hits = _BY_COMUNE.get(norm(c), set())
+    for part in c.split("/") if not hits else []:
+        hits = hits or _BY_COMUNE.get(norm(part), set())
+    if p in _REGIONS:
+        in_reg = {h for h in hits if h[0] == _REGIONS[p]}
+        if len(in_reg) == 1:
+            r, pr = next(iter(in_reg))
+            return r, PROV_LABEL[pr]
+        return _REGIONS[p], None
     if len(hits) > 1 and p:
         hits = {h for h in hits if h[1] == p or h[1].startswith(p)} or hits
     if len(hits) == 1:
