@@ -19,6 +19,7 @@ from ics import write_calendar
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data", "notices.json")
 CATS = os.path.join(HERE, "data", "categorie.json")
+CPV = os.path.join(HERE, "ref", "cpv_it.json")  # CPV 2008, Publications Office of the EU (EU Vocabularies)
 BASE = "https://ossian.cloud/bandi"
 SOURCE = "Fonte: ANAC, Piattaforma di Pubblicità a Valore Legale, CC BY 4.0"
 DISCLAIMER = "Estratto non ufficiale, fa fede l'avviso ANAC."
@@ -55,6 +56,30 @@ def day(iso):
     return iso[8:10] + "/" + iso[5:7] + "/" + iso[0:4] if iso else None
 
 
+def load_cpv():
+    """(code by label, division labels). PVL gives CPV labels only; a label shared by codes of different
+    divisions maps to nothing rather than to a guess."""
+    codes = json.load(open(CPV))
+    by_label = {}
+    for c, lab in codes.items():
+        by_label.setdefault(lab, set()).add(c)
+    code_of = {lab: min(cs) for lab, cs in by_label.items() if len({c[:2] for c in cs}) == 1}
+    divisions = {c[:2]: lab for c, lab in codes.items() if c.endswith("000000")}
+    return code_of, divisions
+
+
+CPV_CODE, CPV_DIVISIONS = load_cpv()
+
+
+def cpv_text(label):
+    code = CPV_CODE.get(label)
+    return f"CPV {code} {label}" if code else label
+
+
+def divisions(n):
+    return {CPV_CODE[l["cpv"]][:2] for l in n["lotti"] if l.get("cpv") in CPV_CODE}
+
+
 def short(s, n):
     s = " ".join((s or "").split())
     return s if len(s) <= n else s[: n - 1].rstrip() + "…"
@@ -84,13 +109,13 @@ def entry(n):
     if len(n["lotti"]) > 1 or (n["lotti"] and n["lotti"][0]["descrizione"] != n["oggetto"]):
         parts.append(f"<p><b>Lotti ({len(n['lotti'])}):</b></p><ol>")
         for l in n["lotti"][:20]:
-            bits = [short(l["descrizione"], 200), l["natura"], l["cpv"], soa(l),
+            bits = [short(l["descrizione"], 200), l["natura"], cpv_text(l["cpv"]) if l["cpv"] else None, soa(l),
                     euro(l["valore"]) if l["valore"] else None, f"CIG {l['cig']}" if l["cig"] else None]
             parts.append("<li>" + e(" · ".join(b for b in bits if b)) + "</li>")
         parts.append("</ol>")
     elif n["lotti"]:
         l = n["lotti"][0]
-        bits = [l["natura"], l["cpv"], soa(l), f"CIG {l['cig']}" if l["cig"] else None]
+        bits = [l["natura"], cpv_text(l["cpv"]) if l["cpv"] else None, soa(l), f"CIG {l['cig']}" if l["cig"] else None]
         parts.append("<p>" + e(" · ".join(b for b in bits if b)) + "</p>")
     links = [f'<a href="{e(n["link"])}">Avviso ufficiale su ANAC PVL</a>']
     if n["documenti"]:
@@ -172,11 +197,16 @@ def main(outdir):
         items = [n for n in notices if any(c in l.get("categorie", []) for l in n["lotti"])]
         soa_counts[c] = len(items)
         emit("soa-" + slug(c), f"Lavori, categoria {c}", items)
+    sector_counts = {}
+    for d in sorted(CPV_DIVISIONS):
+        items = [n for n in notices if d in divisions(n)]
+        sector_counts[d] = len(items)
+        emit("settore-" + d, f"Settore CPV {d}: {short(CPV_DIVISIONS[d], 80)}", items)
     write_region_pages(outdir, notices, now, provinces)
     write_province_pages(outdir, notices, now, provinces)
     write_calendars(outdir, notices, now, provinces)
     write_search(outdir, notices, now)
-    write_page(outdir, notices, now, provinces, [(c, labels[c], soa_counts[c]) for c in soa])
+    write_page(outdir, notices, now, provinces, [(c, labels[c], soa_counts[c]) for c in soa], sector_counts)
     write_sitemap(outdir, now)
     json.dump({"updated": now, "notices": len(notices), "feeds": feeds},
               open(os.path.join(outdir, "feeds.json"), "w"), ensure_ascii=False, indent=1)
@@ -238,7 +268,7 @@ PVL = "https://pubblicitalegale.anticorruzione.it/"
 def write_search(outdir, notices, now):
     """Data for the static search page (static/cerca.html): open notices, one per procedure, as compact rows.
     Row: [link (without PVL prefix), oggetto, enti, tipo, scadenza ISO or "", total value, regions, provinces,
-    natures, extra searchable text (lot descriptions, CPV labels, SOA categories)]."""
+    natures, extra searchable text (lot descriptions, CPV labels, SOA categories), CPV divisions]."""
     seen, rows = set(), []
     for n in open_notices(notices, now):
         if n["appalto"] in seen:
@@ -257,12 +287,13 @@ def write_search(outdir, notices, now):
                      sorted({l["regione"] for l in lots if l["regione"]}),
                      sorted({l["prov"] for l in lots if l.get("prov")}),
                      sorted({l["natura"] for l in lots if l["natura"]}),
-                     short(" · ".join(extra), 700)])
+                     short(" · ".join(extra), 700), sorted(divisions(n))])
     provinces = {}
     for p, r in geo._BY_PROV.items():
         provinces.setdefault(r, []).append(geo.PROV_LABEL[p])
     data = {"updated": now, "base": PVL, "source": f"{SOURCE}. {DISCLAIMER}",
-            "regions": {r: sorted(provinces.get(r, [])) for r in REGIONS}, "rows": rows}
+            "regions": {r: sorted(provinces.get(r, [])) for r in REGIONS},
+            "sectors": {d: short(CPV_DIVISIONS[d], 70) for d in sorted(CPV_DIVISIONS)}, "rows": rows}
     tmp = os.path.join(outdir, "aperti.json.tmp")
     json.dump(data, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     os.replace(tmp, os.path.join(outdir, "aperti.json"))
@@ -375,7 +406,7 @@ def write_region_pages(outdir, notices, now, provinces):
         os.replace(path + ".tmp", path)
 
 
-def write_page(outdir, notices, now, provinces, soa):
+def write_page(outdir, notices, now, provinces, soa, sector_counts):
     e = html.escape
     when = dt.datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ").strftime("%d/%m/%Y %H:%M UTC")
     counts = {}
@@ -403,6 +434,8 @@ def write_page(outdir, notices, now, provinces, soa):
     soa_rows = "\n".join(
         f"<li>{a('soa-' + slug(c), e(c))} {e(re.sub(r'^O[GS] [^ ]+ - ', '', lab).strip().capitalize())} ({k})</li>"
         for c, lab, k in soa)
+    sector_rows = "\n".join(
+        f"<li>{a('settore-' + d, d)} {e(CPV_DIVISIONS[d])} ({k})</li>" for d, k in sector_counts.items())
     page = f"""<!doctype html>
 <html lang="it">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -454,6 +487,14 @@ Trovi i link nella tabella qui sotto (colonna «calendario») e, per provincia, 
 <p>Per ogni provincia: la pagina dei bandi aperti e il feed. La provincia è quella del comune di esecuzione.</p>
 <ul>
 {prov_rows}
+</ul>
+
+<h2 id="settore">Per settore (CPV)</h2>
+<p>Un feed per ogni divisione del <a href="https://op.europa.eu/it/web/eu-vocabularies/cpv">Vocabolario comune per gli appalti</a> (CPV),
+ricavata dal CPV di ciascun lotto: per esempio {a("settore-72", "72, servizi informatici")} o {a("settore-90", "90, rifiuti, pulizia e ambiente")}.
+Tra parentesi gli avvisi degli ultimi 30 giorni. Etichette CPV: Ufficio delle pubblicazioni dell'UE, EU Vocabularies.</p>
+<ul>
+{sector_rows}
 </ul>
 
 <h2>Lavori per categoria SOA</h2>

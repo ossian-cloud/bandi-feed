@@ -22,6 +22,7 @@ input,select,button{font:inherit;background:#1a1d24;color:#d8dbe0;border:1px sol
 <label>Regione<select id="r"><option value="">tutte</option></select></label>
 <label>Provincia<select id="p"><option value="">tutte</option></select></label>
 <label>Tipo<select id="n"><option value="">tutti</option><option>Lavori</option><option>Servizi</option><option>Forniture</option></select></label>
+<label>Settore (CPV)<select id="c"><option value="">tutti</option></select></label>
 <label>Importo minimo (€)<input id="v" type="number" min="0" step="1000" inputmode="numeric"></label>
 <label>Ordina per<select id="o"><option value="s">scadenza più vicina</option><option value="v">importo più alto</option></select></label>
 </form>
@@ -53,12 +54,12 @@ function fillProvinces() {
 function readHash() {
   const h = new URLSearchParams(location.hash.slice(1));
   $("q").value = h.get("q") || ""; $("r").value = h.get("r") || ""; fillProvinces();
-  $("p").value = h.get("p") || ""; $("n").value = h.get("n") || "";
+  $("p").value = h.get("p") || ""; $("n").value = h.get("n") || ""; $("c").value = h.get("c") || "";
   $("v").value = h.get("v") || ""; $("o").value = h.get("o") || "s";
 }
 function writeHash() {
   const h = new URLSearchParams();
-  for (const k of ["q", "r", "p", "n", "v"]) if ($(k).value) h.set(k, $(k).value);
+  for (const k of ["q", "r", "p", "n", "c", "v"]) if ($(k).value) h.set(k, $(k).value);
   if ($("o").value !== "s") h.set("o", $("o").value);
   history.replaceState(null, "", h.toString() ? "#" + h : location.pathname);
 }
@@ -69,8 +70,8 @@ function search() {
     "(^|[^a-z0-9])o" + m[1] + " " + m[2] + (m[3] || "(-[a-z]+)?") + "(?![0-9a-z-])"));
   q = q.replace(/\bo([gs])\s*(\d+)(-[a-z]+)?\b/g, " ");
   const words = q.split(/\s+/).filter(Boolean);
-  const r = $("r").value, p = $("p").value, n = $("n").value, v = Number($("v").value) || 0;
-  rows = D.rows.filter(x => (!r || x[6].includes(r)) && (!p || x[7].includes(p)) && (!n || x[8].includes(n))
+  const r = $("r").value, p = $("p").value, n = $("n").value, c = $("c").value, v = Number($("v").value) || 0;
+  rows = D.rows.filter(x => (!r || x[6].includes(r)) && (!p || x[7].includes(p)) && (!n || x[8].includes(n)) && (!c || (x[10] || []).includes(c))
     && x[5] >= v && words.every(w => x._t.includes(w)) && soa.every(re => re.test(x._t)));
   if ($("o").value === "v") rows.sort((a, b) => b[5] - a[5]);
   else rows.sort((a, b) => (a[4] || "9") < (b[4] || "9") ? -1 : 1);
@@ -94,13 +95,16 @@ fetch("aperti.json").then(r => r.json()).then(d => {
   D.rows = D.rows.filter(x => !x[4] || x[4] >= now);
   for (const x of D.rows) x._t = norm([x[1], x[2], x[9]].join(" "));
   opt($("r"), Object.keys(D.regions));
+  for (const [k, v] of Object.entries(D.sectors || {})) {
+    const o = document.createElement("option"); o.value = k; o.textContent = k + " · " + v; $("c").append(o);
+  }
   $("upd").textContent = "Aggiornato " + when(D.updated.slice(0, 19)) + ".";
   $("src").textContent = D.source;
   readHash(); search();
   let t;
   $("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(search, 200); });
   $("r").addEventListener("change", () => { fillProvinces(); search(); });
-  for (const k of ["p", "n", "o"]) $(k).addEventListener("change", search);
+  for (const k of ["p", "n", "c", "o"]) $(k).addEventListener("change", search);
   $("v").addEventListener("input", search);
   $("more").addEventListener("click", more);
 }).catch(() => { $("count").textContent = "Non riesco a caricare i dati. Riprova più tardi."; });

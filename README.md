@@ -20,15 +20,18 @@ connection with ANAC.
 - `geo.py` maps the place of performance (municipality and province name) to a region, using ISTAT's
   list of Italian municipalities.
 - `build.py` writes one feed for all of Italy, one per type of contract, one per region and one per
-  region and type, one per province and one per SOA category, plus an HTML index page and one page
+  region and type, one per province, one per SOA category and one per CPV division (sector), plus an HTML index page and one page
   per region and per province of open notices by deadline. Every entry links to the official
   notice and carries the source and licence.
 - It also writes one iCalendar file per region and per province (`calendario/*.ics`): an event at the
   deadline of each open notice, one per procedure (the most recent notice wins, so a rettifica that
   moves the deadline moves the event). Subscribe from Google Calendar, Outlook, Apple Calendar or Thunderbird.
 - It writes `aperti.json` (open notices, one per procedure, compact rows) for `static/cerca.html`, a
-  search page that filters by words, region, province, type and value entirely in the browser.
+  search page that filters by words, region, province, type, sector and value entirely in the browser.
   Filters live in the URL fragment, so a search can be bookmarked; nothing is sent anywhere.
+- PVL gives each lot's CPV as an Italian label only. `ref/cpv_it.json` (CPV 2008, from the EU Publications
+  Office's EU Vocabularies SPARQL endpoint, release 20260520-0) maps labels back to codes; on 2026-10-06
+  all 6,367 labelled lots matched exactly one code. Entries show the code, and the search page can filter by division.
 - `atom.py` and `ics.py` are minimal Atom 1.0 and iCalendar writers (stdlib only).
 
 Python 3.10+, no dependencies.
