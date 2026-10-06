@@ -427,12 +427,12 @@ Questo è un <strong>estratto non ufficiale: fa fede l'avviso ANAC</strong>, a c
 <h2>Senza lettore di feed</h2>
 <p><strong><a href="cerca.html">Cerca tra i bandi aperti</a></strong> per parola, regione, provincia, tipo e importo
 (per esempio <a href="cerca.html#q=manutenzione+verde">manutenzione verde</a> o <a href="cerca.html#q=OG+3&amp;n=Lavori">lavori OG 3</a>).
-Oppure consulta i bandi ancora aperti regione per regione, ordinati per scadenza: clicca sul nome della regione nella tabella qui sotto.</p>
+Oppure consulta i bandi ancora aperti regione per regione o <a href="#provincia">provincia per provincia</a>, ordinati per scadenza: clicca sul nome della regione nella tabella qui sotto o su quello della provincia più in basso.</p>
 
 <h2 id="calendario">Le scadenze nel tuo calendario</h2>
 <p>Per ogni regione e ogni provincia c'è un calendario (formato iCalendar) con le scadenze dei bandi ancora aperti:
 ogni evento è la scadenza di un avviso, con ente, valore, CIG e il link all'avviso ufficiale. Il calendario si aggiorna da solo.
-Trovi i link nella tabella qui sotto (colonna «calendario») e, per provincia, nelle pagine delle regioni.</p>
+Trovi i link nella tabella qui sotto (colonna «calendario») e, per provincia, nelle pagine delle regioni e delle province.</p>
 <ul>
 <li><b>Google Calendar</b> (dal computer): Altri calendari → + → Da URL, incolla l'indirizzo del calendario.</li>
 <li><b>Outlook</b>: Aggiungi calendario → Sottoscrivi dal Web, incolla l'indirizzo.</li>
@@ -450,7 +450,7 @@ Trovi i link nella tabella qui sotto (colonna «calendario») e, per provincia, 
 {rows}
 </tbody></table>
 
-<h2>Per provincia</h2>
+<h2 id="provincia">Per provincia</h2>
 <p>Per ogni provincia: la pagina dei bandi aperti e il feed. La provincia è quella del comune di esecuzione.</p>
 <ul>
 {prov_rows}
