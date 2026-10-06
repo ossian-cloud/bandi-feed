@@ -7,7 +7,7 @@ REF = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ref", "comuni.cs
 
 
 def norm(s):
-    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
+    s = unicodedata.normalize("NFKD", (s or "").replace("ß", "ss")).encode("ascii", "ignore").decode()
     return " ".join(s.upper().replace("'", " ").replace("-", " ").split())
 
 

@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import zoneinfo
 import sys
 
 import geo
@@ -25,6 +26,15 @@ RIGHTS = (f"{SOURCE} (https://pubblicitalegale.anticorruzione.it). {DISCLAIMER} 
 MAX_ENTRIES = 200
 TUTTI_MAX = 200
 PERSONAL_CF = re.compile(r"\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b")
+# a role followed by what looks like a person's name ("RUP: Mario Rossi", "Ing. Anna Bianchi")
+_ROLE = (r"(?:R\.?U\.?P|D\.?E\.?C|RESPONSABILE (?:UNICO )?DEL (?:PROCEDIMENTO|PROGETTO)"
+         r"|DIRETTORE (?:DEI LAVORI|DELL'ESECUZIONE(?: DEL CONTRATTO)?)|PROGETTISTA"
+         r"|ING|ARCH|GEOM|DOTT(?:\.?SSA)?|SIG(?:\.?RA)?|AVV)\b\.?")
+_STOP = (r"(?!(?:PER|DI|DEL|DELLA|DELLO|DEI|DEGLI|E|ED|IL|LA|LO|I|GLI|LE|A|AL|ALLA|IN|CON|SU|DA|DAL|CHE"
+         r"|NEL|NELLA|N|NR|NUMERO|ART|COMUNE|SERVIZI?|LAVORI|FORNITURA)\b)")
+_WORD = _STOP + r"[A-ZÀ-Ý][A-Za-zà-ÿ'’]+"
+PERSONAL_NAME = re.compile(r"(?<![A-Za-z])(?i:" + _ROLE + r")\s*[:\-–]?\s*" + _WORD + r"\s+" + _WORD)
+ROME = zoneinfo.ZoneInfo("Europe/Rome")
 
 REGIONS = ["Abruzzo", "Basilicata", "Calabria", "Campania", "Emilia-Romagna", "Friuli-Venezia Giulia",
            "Lazio", "Liguria", "Lombardia", "Marche", "Molise", "Piemonte", "Puglia", "Sardegna",
@@ -97,11 +107,29 @@ def entry(n):
             "categories": cats}
 
 
+def clean(n):
+    """Fix two upstream quirks: HTML entities in free text, and "end of day" deadlines sent as 23:59 UTC."""
+    n["oggetto"] = html.unescape(n["oggetto"]) if n["oggetto"] else n["oggetto"]
+    for l in n["lotti"]:
+        l["descrizione"] = html.unescape(l["descrizione"]) if l["descrizione"] else l["descrizione"]
+    s = n["scadenza"]
+    if s and s[10:16] == "T23:59" and s.endswith(("Z", "+00:00")):
+        # meant as 23:59 Italian time on that date; reading it as UTC would move it past midnight
+        local = dt.datetime.fromisoformat(s[:16]).replace(tzinfo=ROME)
+        n["scadenza"] = local.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000+00:00")
+
+
+def personal(n):
+    text = " ".join([n["oggetto"] or ""] + [l["descrizione"] or "" for l in n["lotti"]])
+    return bool(PERSONAL_CF.search(text) or PERSONAL_NAME.search(text))
+
+
 def main(outdir):
     db = json.load(open(DATA))
-    # belt and braces: never publish a notice whose text contains a personal tax code
-    db = {k: n for k, n in db.items()
-          if not PERSONAL_CF.search(" ".join([n["oggetto"] or ""] + [l["descrizione"] or "" for l in n["lotti"]]))}
+    for n in db.values():
+        clean(n)
+    # belt and braces: never publish a notice whose text contains a personal tax code or a named RUP/DEC etc.
+    db = {k: n for k, n in db.items() if not personal(n)}
     notices = sorted(db.values(), key=lambda n: (n["pubblicato"] or "", n["id"]), reverse=True)
     now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     os.makedirs(os.path.join(outdir, "feed"), exist_ok=True)
