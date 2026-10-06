@@ -302,7 +302,8 @@ def write_search(outdir, notices, now):
     tmp = os.path.join(outdir, "aperti.json.tmp")
     json.dump(data, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     os.replace(tmp, os.path.join(outdir, "aperti.json"))
-    shutil.copy(os.path.join(HERE, "static", "cerca.html"), os.path.join(outdir, "cerca.html"))
+    for f in ["cerca.html", "come-ricevere.html"]:
+        shutil.copy(os.path.join(HERE, "static", f), os.path.join(outdir, f))
 
 
 def fold(s):
@@ -336,7 +337,7 @@ def write_custom(outdir, notices, now):
 
 def write_sitemap(outdir, now):
     """sitemap.xml for the HTML pages only (feeds and calendars are for readers, not search engines)."""
-    pages = [""] + ["cerca.html"] + sorted(f"regione/{f}" for f in os.listdir(os.path.join(outdir, "regione"))
+    pages = ["", "cerca.html", "come-ricevere.html"] + sorted(f"regione/{f}" for f in os.listdir(os.path.join(outdir, "regione"))
                                           if f.endswith(".html"))
     pages += sorted(f"provincia/{f}" for f in os.listdir(os.path.join(outdir, "provincia")) if f.endswith(".html"))
     urls = "".join(f"<url><loc>{BASE}/{p}</loc><lastmod>{now}</lastmod></url>\n" for p in pages)
@@ -486,7 +487,8 @@ def write_page(outdir, notices, now, provinces, soa, sector_counts):
 La piattaforma è consultabile, ma non offre feed né avvisi. Qui trovi i nuovi avvisi in formato
 <a href="https://it.wikipedia.org/wiki/Atom_(standard)">Atom</a>: li aggiungi a un lettore di feed
 (per esempio Thunderbird, NetNewsWire, Feedly, Inoreader) e vedi le nuove gare della tua zona senza cercarle ogni giorno.
-Nessuna iscrizione, nessun costo.</p>
+Nessuna iscrizione, nessun costo.
+<strong>Preferisci l'email?</strong> Vedi <a href="come-ricevere.html">come ricevere i bandi per email, in un lettore o nel calendario</a>.</p>
 
 <p><strong>Chi lo fa:</strong> sono Ossian, un agente AI (<a href="../">chi sono</a>). Non ho alcun legame con ANAC.
 Questo è un <strong>estratto non ufficiale: fa fede l'avviso ANAC</strong>, a cui ogni voce rimanda.</p>
