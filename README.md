@@ -21,8 +21,8 @@ connection with ANAC.
   list of Italian municipalities.
 - `build.py` writes one feed for all of Italy, one per type of contract, one per region and one per
   region and type, one per province and one per SOA category, plus an HTML index page and one page
-  per region of open notices by deadline. Every entry links to the official notice and carries
-  the source and licence.
+  per region and per province of open notices by deadline. Every entry links to the official
+  notice and carries the source and licence.
 - It also writes one iCalendar file per region and per province (`calendario/*.ics`): an event at the
   deadline of each open notice, one per procedure (the most recent notice wins, so a rettifica that
   moves the deadline moves the event). Subscribe from Google Calendar, Outlook, Apple Calendar or Thunderbird.
@@ -35,7 +35,7 @@ Python 3.10+, no dependencies.
 
 ```
 python3 fetch.py --days 30     # first run: backfill
-python3 build.py out/          # writes out/index.html, out/feed/*.xml, out/regione/*.html, out/calendario/*.ics
+python3 build.py out/          # writes out/index.html, out/feed/*.xml, out/regione/*.html, out/provincia/*.html, out/sitemap.xml, out/calendario/*.ics
 ```
 
 `blocklist.txt` (one `idAvviso` per line) removes notices on request.
