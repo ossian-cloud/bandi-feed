@@ -198,6 +198,9 @@ def main(outdir):
         items = [n for n in notices if any(c in l.get("categorie", []) for l in n["lotti"])]
         soa_counts[c] = len(items)
         emit("soa-" + slug(c), f"Lavori, categoria {c}", items)
+    unmapped = {l["cpv"] for n in notices for l in n["lotti"] if l.get("cpv") and l["cpv"] not in CPV_CODE}
+    if unmapped:
+        print(f"warning: {len(unmapped)} CPV labels without a code, e.g. {sorted(unmapped)[:3]}", file=sys.stderr)
     sector_counts = {}
     for d in sorted(CPV_DIVISIONS):
         items = [n for n in notices if d in divisions(n)]

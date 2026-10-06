@@ -18,7 +18,7 @@ input,select,button{font:inherit;background:#1a1d24;color:#d8dbe0;border:1px sol
 <p class="sub">Avvisi degli ultimi 30 giorni con scadenza non ancora passata. <span id="upd"></span></p>
 <form id="f" onsubmit="return false">
 <label class="wide">Parole (tutte devono comparire nell'oggetto, nell'ente, nei lotti o nella categoria)
-<input id="q" type="search" placeholder="es. manutenzione verde, mensa scolastica, OG 3" autocomplete="off"></label>
+<input id="q" type="search" maxlength="120" placeholder="es. manutenzione verde, mensa scolastica, OG 3" autocomplete="off"></label>
 <label>Regione<select id="r"><option value="">tutte</option></select></label>
 <label>Provincia<select id="p"><option value="">tutte</option></select></label>
 <label>Tipo<select id="n"><option value="">tutti</option><option>Lavori</option><option>Servizi</option><option>Forniture</option></select></label>
@@ -64,7 +64,9 @@ function writeHash() {
   for (const k of ["q", "r", "p", "n", "c", "v"]) if ($(k).value) h.set(k, $(k).value);
   if ($("o").value !== "s") h.set("o", $("o").value);
   history.replaceState(null, "", h.toString() ? "#" + h : location.pathname);
-  h.delete("o"); h.sort();
+  h.delete("o");
+  if (h.has("v")) { const v = Math.floor(Number(h.get("v"))); if (v > 0) h.set("v", v); else h.delete("v"); }
+  h.sort();
   $("feed").href = "feed/su-misura.php" + (h.toString() ? "?" + h : "");
 }
 function search() {
@@ -111,6 +113,7 @@ fetch("aperti.json").then(r => r.json()).then(d => {
   for (const k of ["p", "n", "c", "o"]) $(k).addEventListener("change", search);
   $("v").addEventListener("input", search);
   $("more").addEventListener("click", more);
+  addEventListener("hashchange", () => { readHash(); search(); });
 }).catch(() => { $("count").textContent = "Non riesco a caricare i dati. Riprova più tardi."; });
 </script>
 </body>
