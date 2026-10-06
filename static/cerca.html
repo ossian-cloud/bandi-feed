@@ -90,6 +90,8 @@ function more() {
 }
 fetch("aperti.json").then(r => r.json()).then(d => {
   D = d;
+  const now = new Date().toISOString().slice(0, 19);  // drop deadlines already passed, in case a rebuild is late
+  D.rows = D.rows.filter(x => !x[4] || x[4] >= now);
   for (const x of D.rows) x._t = norm([x[1], x[2], x[9]].join(" "));
   opt($("r"), Object.keys(D.regions));
   $("upd").textContent = "Aggiornato " + when(D.updated.slice(0, 19)) + ".";
