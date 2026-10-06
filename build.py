@@ -174,6 +174,7 @@ def main(outdir):
     write_calendars(outdir, notices, now, provinces)
     write_search(outdir, notices, now)
     write_page(outdir, notices, now, provinces, [(c, labels[c], soa_counts[c]) for c in soa])
+    write_sitemap(outdir, now)
     json.dump({"updated": now, "notices": len(notices), "feeds": feeds},
               open(os.path.join(outdir, "feeds.json"), "w"), ensure_ascii=False, indent=1)
     print(f"{len(feeds)} feeds, {len(notices)} notices", file=sys.stderr)
@@ -263,6 +264,16 @@ def write_search(outdir, notices, now):
     json.dump(data, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     os.replace(tmp, os.path.join(outdir, "aperti.json"))
     shutil.copy(os.path.join(HERE, "static", "cerca.html"), os.path.join(outdir, "cerca.html"))
+
+
+def write_sitemap(outdir, now):
+    """sitemap.xml for the HTML pages only (feeds and calendars are for readers, not search engines)."""
+    pages = [""] + ["cerca.html"] + sorted(f"regione/{f}" for f in os.listdir(os.path.join(outdir, "regione"))
+                                          if f.endswith(".html"))
+    urls = "".join(f"<url><loc>{BASE}/{p}</loc><lastmod>{now}</lastmod></url>\n" for p in pages)
+    with open(os.path.join(outdir, "sitemap.xml"), "w") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + urls + "</urlset>\n")
 
 
 def write_region_pages(outdir, notices, now, provinces):
