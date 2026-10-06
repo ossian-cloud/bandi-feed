@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import urllib.parse
 import zoneinfo
 import sys
 
@@ -171,6 +172,7 @@ def main(outdir):
         soa_counts[c] = len(items)
         emit("soa-" + slug(c), f"Lavori, categoria {c}", items)
     write_region_pages(outdir, notices, now, provinces)
+    write_province_pages(outdir, notices, now, provinces)
     write_calendars(outdir, notices, now, provinces)
     write_search(outdir, notices, now)
     write_page(outdir, notices, now, provinces, [(c, labels[c], soa_counts[c]) for c in soa])
@@ -270,10 +272,63 @@ def write_sitemap(outdir, now):
     """sitemap.xml for the HTML pages only (feeds and calendars are for readers, not search engines)."""
     pages = [""] + ["cerca.html"] + sorted(f"regione/{f}" for f in os.listdir(os.path.join(outdir, "regione"))
                                           if f.endswith(".html"))
+    pages += sorted(f"provincia/{f}" for f in os.listdir(os.path.join(outdir, "provincia")) if f.endswith(".html"))
     urls = "".join(f"<url><loc>{BASE}/{p}</loc><lastmod>{now}</lastmod></url>\n" for p in pages)
     with open(os.path.join(outdir, "sitemap.xml"), "w") as f:
         f.write('<?xml version="1.0" encoding="UTF-8"?>\n'
                 '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + urls + "</urlset>\n")
+
+
+def notice_items(items):
+    """<li> rows for open notices, soonest deadline first."""
+    e = html.escape
+    items = sorted(items, key=lambda n: (n["scadenza"] or "9999", n["pubblicato"]))
+    lis = []
+    for n in items:
+        total = sum(l["valore"] or 0 for l in n["lotti"])
+        nat = ", ".join(sorted({l["natura"] for l in n["lotti"] if l["natura"]}))
+        meta = [("scade " + day(n["scadenza"])) if n["scadenza"] else "senza scadenza indicata",
+                "; ".join(x["nome"] or "" for x in n["ente"]), n["tipo_label"], nat,
+                euro(total) if total else None]
+        lis.append(f'<li><a href="{e(n["link"])}">{e(short(n["oggetto"], 180))}</a>'
+                   + (" <small>[rettifica]</small>" if n["rettifica"] else "")
+                   + f'<br><small>{e(" · ".join(m for m in meta if m))}</small></li>')
+    return lis
+
+
+def write_province_pages(outdir, notices, now, provinces):
+    """One plain HTML page per province: its open notices, soonest deadline first."""
+    e = html.escape
+    when = dt.datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ").strftime("%d/%m/%Y %H:%M UTC")
+    os.makedirs(os.path.join(outdir, "provincia"), exist_ok=True)
+    live = open_notices(notices, now)
+    for reg in REGIONS:
+        for pv in provinces.get(reg, []):
+            items = [n for n in live if any(l.get("prov") == pv for l in n["lotti"])]
+            name = f"provincia di {pv}" if pv != "Valle d'Aosta" else pv
+            s = slug(pv)
+            page = f"""<!doctype html>
+<html lang="it">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bandi aperti in {e(name)} · ossian.cloud</title>
+<meta name="description" content="Bandi di gara e avvisi ancora aperti in {e(name)} ({e(reg)}), dalla scadenza più vicina, con feed e calendario delle scadenze. Estratto non ufficiale dalla piattaforma ANAC.">
+<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · {e(pv)}" href="../feed/prov-{s}.xml">
+<link rel="stylesheet" href="../../style.css"></head>
+<body><main>
+<p><small><a href="../">← Bandi pubblici in feed</a> · <a href="../regione/{slug(reg)}.html">{e(reg)}</a> · <a href="../cerca.html#{e(urllib.parse.urlencode({"r": reg, "p": pv}))}">cerca in {e(name)}</a></small></p>
+<h1>Bandi aperti in {e(name)}</h1>
+<p class="sub">{len(items)} avvisi pubblicati negli ultimi 30 giorni con scadenza non ancora passata, dalla scadenza più vicina. Aggiornato {when}.
+<a href="../feed/prov-{s}.xml">Feed Atom della provincia</a> ·
+<a href="../calendario/prov-{s}.ics">calendario delle scadenze</a> (<a href="../#calendario">come si usa</a>).</p>
+<p><small>{e(SOURCE)}. {e(DISCLAIMER)} Pagina generata da Ossian, un agente AI, senza legami con ANAC.</small></p>
+{("<ul>" + chr(10) + chr(10).join(notice_items(items)) + chr(10) + "</ul>") if items else "<p>Nessun avviso aperto al momento.</p>"}
+<footer><a href="../">Bandi pubblici in feed</a> · <a href="../../privacy.html">privacy</a> · gestito da un agente AI</footer>
+</main></body>
+</html>
+"""
+            path = os.path.join(outdir, "provincia", f"{s}.html")
+            open(path + ".tmp", "w", encoding="utf-8").write(page)
+            os.replace(path + ".tmp", path)
 
 
 def write_region_pages(outdir, notices, now, provinces):
@@ -288,19 +343,10 @@ def write_region_pages(outdir, notices, now, provinces):
                      if any(l["regione"] == reg and l.get("prov") == pv for l in n["lotti"])]
             if not items:
                 continue
-            items.sort(key=lambda n: (n["scadenza"] or "9999", n["pubblicato"]))
-            lis = []
-            for n in items:
-                total = sum(l["valore"] or 0 for l in n["lotti"])
-                nat = ", ".join(sorted({l["natura"] for l in n["lotti"] if l["natura"]}))
-                meta = [("scade " + day(n["scadenza"])) if n["scadenza"] else "senza scadenza indicata",
-                        "; ".join(x["nome"] or "" for x in n["ente"]), n["tipo_label"], nat,
-                        euro(total) if total else None]
-                lis.append(f'<li><a href="{e(n["link"])}">{e(short(n["oggetto"], 180))}</a>'
-                           + (" <small>[rettifica]</small>" if n["rettifica"] else "")
-                           + f'<br><small>{e(" · ".join(m for m in meta if m))}</small></li>')
+            lis = notice_items(items)
             title = f"Provincia di {pv}" if pv and pv != "Valle d'Aosta" else (pv or "Luogo non indicato")
-            feed = (f' <small><a href="../feed/prov-{slug(pv)}.xml">feed</a> · '
+            feed = (f' <small><a href="../provincia/{slug(pv)}.html">pagina</a> · '
+                    f'<a href="../feed/prov-{slug(pv)}.xml">feed</a> · '
                     f'<a href="../calendario/prov-{slug(pv)}.ics">calendario</a></small>') if pv else ""
             blocks.append(f'<h2 id="{slug(pv or "altro")}">{e(title)} ({len(items)}){feed}</h2>\n<ul>\n'
                           + "\n".join(lis) + "\n</ul>")
@@ -350,7 +396,8 @@ def write_page(outdir, notices, now, provinces, soa):
         + (f" · scade {day(n['scadenza'])}" if n["scadenza"] else "") + "</small></li>"
         for n in notices[:15])
     prov_rows = "\n".join(
-        f"<li><b>{e(r)}:</b> " + " · ".join(a("prov-" + slug(p), e(p)) for p in provinces.get(r, [])) + "</li>"
+        f"<li><b>{e(r)}:</b> " + " · ".join(f'<a href="provincia/{slug(p)}.html">{e(p)}</a> <small>({a("prov-" + slug(p), "feed")})</small>'
+                                    for p in provinces.get(r, [])) + "</li>"
         for r in REGIONS)
     soa_rows = "\n".join(
         f"<li>{a('soa-' + slug(c), e(c))} {e(re.sub(r'^O[GS] [^ ]+ - ', '', lab).strip().capitalize())} ({k})</li>"
@@ -403,7 +450,7 @@ Trovi i link nella tabella qui sotto (colonna «calendario») e, per provincia, 
 </tbody></table>
 
 <h2>Per provincia</h2>
-<p>La provincia è quella del comune di esecuzione.</p>
+<p>Per ogni provincia: la pagina dei bandi aperti e il feed. La provincia è quella del comune di esecuzione.</p>
 <ul>
 {prov_rows}
 </ul>
