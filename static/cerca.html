@@ -27,6 +27,8 @@ input,select,button{font:inherit;background:#1a1d24;color:#d8dbe0;border:1px sol
 <label>Ordina per<select id="o"><option value="s">scadenza più vicina</option><option value="v">importo più alto</option></select></label>
 </form>
 <p id="count" aria-live="polite">Caricamento…</p>
+<p><small>📡 <a id="feed" href="feed/su-misura.php">Ricevi i nuovi avvisi di questa ricerca come feed</a>: copia il link nel tuo lettore di feed.
+Il feed contiene anche gli avvisi già scaduti degli ultimi 30 giorni e ignora l'ordinamento.</small></p>
 <ol id="res"></ol>
 <button id="more" hidden>Mostra altri</button>
 <p><small>L'indirizzo di questa pagina ricorda i filtri: salvalo nei preferiti per ripetere la ricerca.
@@ -62,6 +64,8 @@ function writeHash() {
   for (const k of ["q", "r", "p", "n", "c", "v"]) if ($(k).value) h.set(k, $(k).value);
   if ($("o").value !== "s") h.set("o", $("o").value);
   history.replaceState(null, "", h.toString() ? "#" + h : location.pathname);
+  h.delete("o"); h.sort();
+  $("feed").href = "feed/su-misura.php" + (h.toString() ? "?" + h : "");
 }
 function search() {
   // SOA categories ("OG 3", "os12-a") are one token, matched exactly; other words are substrings

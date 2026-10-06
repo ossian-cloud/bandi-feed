@@ -11,9 +11,10 @@ import shutil
 import urllib.parse
 import zoneinfo
 import sys
+import unicodedata
 
 import geo
-from atom import write_feed
+from atom import entry_xml, write_feed
 from ics import write_calendar
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -206,6 +207,7 @@ def main(outdir):
     write_province_pages(outdir, notices, now, provinces)
     write_calendars(outdir, notices, now, provinces)
     write_search(outdir, notices, now)
+    write_custom(outdir, notices, now)
     write_page(outdir, notices, now, provinces, [(c, labels[c], soa_counts[c]) for c in soa], sector_counts)
     write_sitemap(outdir, now)
     json.dump({"updated": now, "notices": len(notices), "feeds": feeds},
@@ -298,6 +300,35 @@ def write_search(outdir, notices, now):
     json.dump(data, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     os.replace(tmp, os.path.join(outdir, "aperti.json"))
     shutil.copy(os.path.join(HERE, "static", "cerca.html"), os.path.join(outdir, "cerca.html"))
+
+
+def fold(s):
+    """Lowercase without accents: what both the search page and su-misura.php compare."""
+    return "".join(c for c in unicodedata.normalize("NFD", (s or "").lower()) if not unicodedata.combining(c))
+
+
+def write_custom(outdir, notices, now):
+    """Data for feed/su-misura.php, which serves a feed for any combination of filters.
+    One row per notice, newest first, with the filter fields and the ready-made <entry>."""
+    rows = []
+    for n in notices:
+        lots = n["lotti"]
+        text = [n["oggetto"], "; ".join(x["nome"] or "" for x in n["ente"])]
+        for l in lots:
+            text += [l["descrizione"], l["cpv"]] + [c for c in l.get("categorie", []) if re.match(r"O[GS] ", c)]
+        rows.append({"r": sorted({l["regione"] for l in lots if l["regione"]}),
+                     "p": sorted({l["prov"] for l in lots if l.get("prov")}),
+                     "n": sorted({l["natura"] for l in lots if l["natura"]}),
+                     "c": sorted(divisions(n)), "v": round(sum(l["valore"] or 0 for l in lots)),
+                     "t": " ".join(fold(" ".join(t for t in text if t)).split()),
+                     "x": entry_xml(entry(n))})
+    data = {"updated": now, "base": BASE, "rights": RIGHTS,
+            "subtitle": f"Bandi pubblicati su ANAC PVL, filtrati su misura. {SOURCE}. {DISCLAIMER}",
+            "regions": REGIONS, "sectors": CPV_DIVISIONS, "rows": rows}
+    tmp = os.path.join(outdir, "feed", "su-misura.json.tmp")
+    json.dump(data, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+    os.replace(tmp, os.path.join(outdir, "feed", "su-misura.json"))
+    shutil.copy(os.path.join(HERE, "static", "su-misura.php"), os.path.join(outdir, "feed", "su-misura.php"))
 
 
 def write_sitemap(outdir, now):
@@ -461,6 +492,14 @@ Questo è un <strong>estratto non ufficiale: fa fede l'avviso ANAC</strong>, a c
 <p><strong><a href="cerca.html">Cerca tra i bandi aperti</a></strong> per parola, regione, provincia, tipo e importo
 (per esempio <a href="cerca.html#q=manutenzione+verde">manutenzione verde</a> o <a href="cerca.html#q=OG+3&amp;n=Lavori">lavori OG 3</a>).
 Oppure consulta i bandi ancora aperti regione per regione o <a href="#provincia">provincia per provincia</a>, ordinati per scadenza: clicca sul nome della regione nella tabella qui sotto o su quello della provincia più in basso.</p>
+
+<h2 id="su-misura">Un feed su misura</h2>
+<p>Se i feed qui sotto sono troppo larghi, fai una <a href="cerca.html">ricerca</a> con i filtri che ti servono
+(parole, regione o provincia, tipo, settore, importo minimo) e usa il link «Ricevi i nuovi avvisi di questa ricerca come feed».
+Per esempio: <a href="feed/su-misura.php?c=72&amp;r=Lombardia">servizi informatici in Lombardia</a>,
+<a href="feed/su-misura.php?n=Lavori&amp;q=og%203&amp;r=Sicilia">lavori OG 3 in Sicilia</a>,
+<a href="feed/su-misura.php?q=mensa%20scolastica">mensa scolastica in tutta Italia</a>.
+Il feed si costruisce dall'indirizzo stesso: non serve iscriversi e non salvo nulla.</p>
 
 <h2 id="calendario">Le scadenze nel tuo calendario</h2>
 <p>Per ogni regione e ogni provincia c'è un calendario (formato iCalendar) con le scadenze dei bandi ancora aperti:
