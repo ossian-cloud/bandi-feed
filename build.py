@@ -14,6 +14,7 @@ import sys
 import unicodedata
 
 import geo
+import layout
 from atom import entry_xml, write_feed
 from ics import write_calendar
 
@@ -211,7 +212,8 @@ def main(outdir):
     write_calendars(outdir, notices, now, provinces)
     write_search(outdir, notices, now)
     write_custom(outdir, notices, now)
-    write_page(outdir, notices, now, provinces, [(c, labels[c], soa_counts[c]) for c in soa], sector_counts)
+    ncal = len([f for f in os.listdir(os.path.join(outdir, "calendario")) if f.endswith(".ics")])
+    write_pages(outdir, notices, now, provinces, [(c, labels[c], soa_counts[c]) for c in soa], sector_counts, len(feeds), ncal)
     write_sitemap(outdir, now)
     json.dump({"updated": now, "notices": len(notices), "feeds": feeds},
               open(os.path.join(outdir, "feeds.json"), "w"), ensure_ascii=False, indent=1)
@@ -302,8 +304,7 @@ def write_search(outdir, notices, now):
     tmp = os.path.join(outdir, "aperti.json.tmp")
     json.dump(data, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     os.replace(tmp, os.path.join(outdir, "aperti.json"))
-    for f in ["cerca.html", "come-ricevere.html"]:
-        shutil.copy(os.path.join(HERE, "static", f), os.path.join(outdir, f))
+    write_static(outdir)
 
 
 def fold(s):
@@ -337,7 +338,7 @@ def write_custom(outdir, notices, now):
 
 def write_sitemap(outdir, now):
     """sitemap.xml for the HTML pages only (feeds and calendars are for readers, not search engines)."""
-    pages = ["", "cerca.html", "come-ricevere.html"] + sorted(f"regione/{f}" for f in os.listdir(os.path.join(outdir, "regione"))
+    pages = ["", "cerca.html", "zone.html", "feed.html", "calendari.html", "come-ricevere.html", "info.html"] + sorted(f"regione/{f}" for f in os.listdir(os.path.join(outdir, "regione"))
                                           if f.endswith(".html"))
     pages += sorted(f"provincia/{f}" for f in os.listdir(os.path.join(outdir, "provincia")) if f.endswith(".html"))
     urls = "".join(f"<url><loc>{BASE}/{p}</loc><lastmod>{now}</lastmod></url>\n" for p in pages)
@@ -346,10 +347,10 @@ def write_sitemap(outdir, now):
                 '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + urls + "</urlset>\n")
 
 
-def notice_items(items):
+def notice_items(items, limit=None):
     """<li> rows for open notices, soonest deadline first."""
     e = html.escape
-    items = sorted(items, key=lambda n: (n["scadenza"] or "9999", n["pubblicato"]))
+    items = sorted(items, key=lambda n: (n["scadenza"] or "9999", n["pubblicato"]))[:limit]
     lis = []
     for n in items:
         total = sum(l["valore"] or 0 for l in n["lotti"])
@@ -358,202 +359,304 @@ def notice_items(items):
                 "; ".join(x["nome"] or "" for x in n["ente"]), n["tipo_label"], nat,
                 euro(total) if total else None]
         lis.append(f'<li><a href="{e(n["link"])}">{e(short(n["oggetto"], 180))}</a>'
-                   + (" <small>[rettifica]</small>" if n["rettifica"] else "")
-                   + f'<br><small>{e(" · ".join(m for m in meta if m))}</small></li>')
+                   + (' <span class="tag">rettifica</span>' if n["rettifica"] else "")
+                   + f'<small>{e(" · ".join(m for m in meta if m))}</small></li>')
     return lis
 
 
+def items_html(items, limit=None):
+    lis = notice_items(items, limit)
+    return ('<ul class="items">\n' + "\n".join(lis) + "\n</ul>") if lis else "<p>Nessun avviso aperto al momento.</p>"
+
+
+def num(k):
+    return f"{k:,}".replace(",", ".")
+
+
+def stamp(now):
+    return dt.datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc) \
+        .astimezone(ROME).strftime("%d/%m/%Y alle %H:%M")
+
+
+def prov_name(pv):
+    return f"provincia di {pv}" if pv != "Valle d'Aosta" else pv
+
+
+def webcal(path):
+    return f'{BASE.replace("https:", "webcal:")}/{path}'
+
+
+def emit_page(outdir, rel, title, description, body, active="", depth=0, extra_head="", before_main=""):
+    layout.write(os.path.join(outdir, rel),
+                 layout.page(title, description, body, active, depth, extra_head, before_main, SOURCE, DISCLAIMER))
+
+
 def write_province_pages(outdir, notices, now, provinces):
-    """One plain HTML page per province: its open notices, soonest deadline first."""
+    """One HTML page per province: its open notices, soonest deadline first."""
     e = html.escape
-    when = dt.datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ").strftime("%d/%m/%Y %H:%M UTC")
     os.makedirs(os.path.join(outdir, "provincia"), exist_ok=True)
     live = open_notices(notices, now)
     for reg in REGIONS:
         for pv in provinces.get(reg, []):
             items = [n for n in live if any(l.get("prov") == pv for l in n["lotti"])]
-            name = f"provincia di {pv}" if pv != "Valle d'Aosta" else pv
-            s = slug(pv)
-            page = f"""<!doctype html>
-<html lang="it">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bandi aperti in {e(name)} · ossian.cloud</title>
-<meta name="description" content="Bandi di gara e avvisi ancora aperti in {e(name)} ({e(reg)}), dalla scadenza più vicina, con feed e calendario delle scadenze. Estratto non ufficiale dalla piattaforma ANAC.">
-<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · {e(pv)}" href="../feed/prov-{s}.xml">
-<link rel="stylesheet" href="../../style.css"></head>
-<body><main>
-<p><small><a href="../">← Bandi pubblici in feed</a> · <a href="../regione/{slug(reg)}.html">{e(reg)}</a> · <a href="../cerca.html#{e(urllib.parse.urlencode({"r": reg, "p": pv}))}">cerca in {e(name)}</a></small></p>
+            name, s = prov_name(pv), slug(pv)
+            q = e(urllib.parse.urlencode({"r": reg, "p": pv}))
+            body = f"""{layout.crumbs([("zone.html", "Regioni e province"), (f"regione/{slug(reg)}.html", reg), ("", pv)], 1)}
 <h1>Bandi aperti in {e(name)}</h1>
-<p class="sub">{len(items)} avvisi pubblicati negli ultimi 30 giorni con scadenza non ancora passata, dalla scadenza più vicina. Aggiornato {when}.
-<a href="../feed/prov-{s}.xml">Feed Atom della provincia</a> ·
-<a href="../calendario/prov-{s}.ics">calendario delle scadenze</a> (<a href="../#calendario">come si usa</a>).</p>
-<p><small>{e(SOURCE)}. {e(DISCLAIMER)} Pagina generata da Ossian, un agente AI, senza legami con ANAC.</small></p>
-{("<ul>" + chr(10) + chr(10).join(notice_items(items)) + chr(10) + "</ul>") if items else "<p>Nessun avviso aperto al momento.</p>"}
-<footer><a href="../">Bandi pubblici in feed</a> · <a href="../../privacy.html">privacy</a> · gestito da un agente AI</footer>
-</main></body>
-</html>
-"""
-            path = os.path.join(outdir, "provincia", f"{s}.html")
-            open(path + ".tmp", "w", encoding="utf-8").write(page)
-            os.replace(path + ".tmp", path)
+<p class="lead">{len(items)} avvisi con scadenza non ancora passata, dalla scadenza più vicina. Aggiornato il {stamp(now)}.</p>
+<div class="actions"><a class="pill" href="../calendario/prov-{s}.ics">📅 Calendario delle scadenze</a>
+<a class="pill" href="../feed/prov-{s}.xml">📡 Feed della provincia</a>
+<a class="pill" href="../cerca.html#{q}">🔎 Cerca in {e(name)}</a>
+<a class="pill" href="../come-ricevere.html">Come si usano?</a></div>
+{items_html(items)}"""
+            emit_page(outdir, f"provincia/{s}.html", f"Bandi aperti in {name} · ossian.cloud",
+                      f"Bandi di gara e avvisi ancora aperti in {name} ({reg}), dalla scadenza più vicina, con feed e "
+                      "calendario delle scadenze. Estratto non ufficiale dalla piattaforma ANAC.",
+                      body, "zone.html", 1,
+                      f'\n<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · {e(pv)}" href="../feed/prov-{s}.xml">')
 
 
 def write_region_pages(outdir, notices, now, provinces):
-    """One plain HTML page per region: open notices grouped by province, soonest deadline first."""
+    """One HTML page per region: open notices grouped by province, soonest deadline first."""
     e = html.escape
-    when = dt.datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ").strftime("%d/%m/%Y %H:%M UTC")
     os.makedirs(os.path.join(outdir, "regione"), exist_ok=True)
+    live = open_notices(notices, now)
     for reg in REGIONS:
-        blocks = []
+        blocks, jump, total = [], [], 0
         for pv in provinces.get(reg, []) + [None]:
-            items = [n for n in open_notices(notices, now)
-                     if any(l["regione"] == reg and l.get("prov") == pv for l in n["lotti"])]
+            items = [n for n in live if any(l["regione"] == reg and l.get("prov") == pv for l in n["lotti"])]
             if not items:
                 continue
-            lis = notice_items(items)
-            title = f"Provincia di {pv}" if pv and pv != "Valle d'Aosta" else (pv or "Luogo non indicato")
-            feed = (f' <small><a href="../provincia/{slug(pv)}.html">pagina</a> · '
-                    f'<a href="../feed/prov-{slug(pv)}.xml">feed</a> · '
-                    f'<a href="../calendario/prov-{slug(pv)}.ics">calendario</a></small>') if pv else ""
-            blocks.append(f'<h2 id="{slug(pv or "altro")}">{e(title)} ({len(items)}){feed}</h2>\n<ul>\n'
-                          + "\n".join(lis) + "\n</ul>")
-        page = f"""<!doctype html>
-<html lang="it">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bandi aperti in {e(reg)} · ossian.cloud</title>
-<meta name="description" content="Bandi di gara e avvisi ancora aperti in {e(reg)}, per provincia e per scadenza. Estratto non ufficiale dalla piattaforma ANAC.">
-<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · {e(reg)}" href="../feed/{slug(reg)}.xml">
-<link rel="stylesheet" href="../../style.css"></head>
-<body><main>
-<p><small><a href="../">← Bandi pubblici in feed</a> · <a href="../cerca.html#r={e(reg)}">cerca in {e(reg)}</a></small></p>
+            total += len(items)
+            title = (prov_name(pv)[0].upper() + prov_name(pv)[1:]) if pv else "Luogo non indicato"
+            anchor = slug(pv or "altro")
+            jump.append(f'<a class="pill" href="#{anchor}">{e(pv or "luogo non indicato")} ({len(items)})</a>')
+            links = (f'<div class="actions"><a class="pill" href="../provincia/{slug(pv)}.html">Pagina della provincia</a>'
+                     f'<a class="pill" href="../calendario/prov-{slug(pv)}.ics">📅 Calendario</a>'
+                     f'<a class="pill" href="../feed/prov-{slug(pv)}.xml">📡 Feed</a></div>') if pv else ""
+            blocks.append(f'<h2 id="{anchor}">{e(title)} <small>({len(items)})</small></h2>\n{links}\n{items_html(items)}')
+        s = slug(reg)
+        body = f"""{layout.crumbs([("zone.html", "Regioni e province"), ("", reg)], 1)}
 <h1>Bandi aperti in {e(reg)}</h1>
-<p class="sub">Avvisi pubblicati negli ultimi 30 giorni con scadenza non ancora passata, per provincia, dalla scadenza più vicina. Aggiornato {when}.
-<a href="../feed/{slug(reg)}.xml">Feed Atom della regione</a> ·
-<a href="../calendario/{slug(reg)}.ics">calendario delle scadenze</a> (<a href="../#calendario">come si usa</a>).</p>
-<p><small>{e(SOURCE)}. {e(DISCLAIMER)} Pagina generata da Ossian, un agente AI, senza legami con ANAC.</small></p>
-{chr(10).join(blocks) or "<p>Nessun avviso aperto al momento.</p>"}
-<footer><a href="../">Bandi pubblici in feed</a> · <a href="../../privacy.html">privacy</a> · gestito da un agente AI</footer>
-</main></body>
-</html>
-"""
-        path = os.path.join(outdir, "regione", f"{slug(reg)}.html")
-        open(path + ".tmp", "w", encoding="utf-8").write(page)
-        os.replace(path + ".tmp", path)
+<p class="lead">Avvisi con scadenza non ancora passata, per provincia, dalla scadenza più vicina. Aggiornato il {stamp(now)}.</p>
+<div class="actions"><a class="pill" href="../calendario/{s}.ics">📅 Calendario della regione</a>
+<a class="pill" href="../feed/{s}.xml">📡 Feed della regione</a>
+<a class="pill" href="../cerca.html#r={e(urllib.parse.quote(reg))}">🔎 Cerca in {e(reg)}</a>
+<a class="pill" href="../come-ricevere.html">Come si usano?</a></div>
+{('<nav class="panel" aria-label="Province"><b>Vai alla provincia:</b><div class="actions">' + "".join(jump) + "</div></nav>") if len(jump) > 1 else ""}
+{chr(10).join(blocks) or "<p>Nessun avviso aperto al momento.</p>"}"""
+        emit_page(outdir, f"regione/{s}.html", f"Bandi aperti in {reg} · ossian.cloud",
+                  f"Bandi di gara e avvisi ancora aperti in {reg}, per provincia e per scadenza. "
+                  "Estratto non ufficiale dalla piattaforma ANAC.", body, "zone.html", 1,
+                  f'\n<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · {e(reg)}" href="../feed/{s}.xml">')
 
 
-def write_page(outdir, notices, now, provinces, soa, sector_counts):
+def open_counts(notices, now):
+    """Open notices per region and per province."""
+    by_reg, by_prov = {}, {}
+    for n in open_notices(notices, now):
+        for r in {l["regione"] for l in n["lotti"] if l["regione"]}:
+            by_reg[r] = by_reg.get(r, 0) + 1
+        for p in {l.get("prov") for l in n["lotti"] if l.get("prov")}:
+            by_prov[p] = by_prov.get(p, 0) + 1
+    return by_reg, by_prov
+
+
+def write_pages(outdir, notices, now, provinces, soa, sector_counts, nfeeds, ncal):
+    """The section's own pages: home, regions and provinces, feeds, calendars, info."""
     e = html.escape
-    when = dt.datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ").strftime("%d/%m/%Y %H:%M UTC")
-    counts = {}
-    for n in notices:
-        for reg in {l["regione"] for l in n["lotti"] if l["regione"]}:
-            counts[reg] = counts.get(reg, 0) + 1
+    live = open_notices(notices, now)
+    by_reg, by_prov = open_counts(notices, now)
+    feed = lambda name, label: f'<a href="feed/{name}.xml">{label}</a>'
 
-    def a(name, label):
-        return f'<a href="feed/{name}.xml">{label}</a>'
+    # home
+    hero = f"""<section class="hero"><div class="wrap">
+<img src="../img/logo.svg" alt="" width="96" height="96">
+<div><h1>Bandi pubblici, senza cercarli</h1>
+<p>I nuovi bandi di gara italiani della tua zona e del tuo settore, gratis: nel calendario, per email, in un lettore di feed o con una ricerca.
+Nessuna iscrizione.</p>
+<div class="cta"><a class="btn" href="cerca.html">Cerca un bando</a><a class="btn ghost" href="#ricevi">Ricevi i nuovi bandi</a></div>
+<p class="meta">Dati della piattaforma ANAC di pubblicità legale · aggiornato il {stamp(now)}</p></div>
+</div></section>"""
+    regions = "\n".join(f'<li><a href="regione/{slug(r)}.html">{e(r)}</a><small>{by_reg.get(r, 0)}</small></li>' for r in REGIONS)
+    body = f"""<div class="stats">
+<div><b>{num(len(live))}</b><span>bandi e avvisi aperti ora</span></div>
+<div><b>{num(len(notices))}</b><span>pubblicati negli ultimi 30 giorni</span></div>
+<div><b>{nfeeds}</b><span>feed per zona, tipo e settore</span></div>
+<div><b>{ncal}</b><span>calendari delle scadenze</span></div>
+</div>
 
-    rows = "\n".join(
-        f"<tr><td><a href=\"regione/{slug(r)}.html\">{e(r)}</a></td><td>{counts.get(r, 0)}</td><td>{a(slug(r), 'tutti')}</td>"
-        + "".join(f"<td>{a(slug(r) + '-' + slug(x), x.lower())}</td>" for x in NATURE)
-        + f'<td><a href="calendario/{slug(r)}.ics">.ics</a> · <a href="{BASE.replace("https:", "webcal:")}/calendario/{slug(r)}.ics">webcal</a></td></tr>'
+<h2 id="ricevi">Come vuoi seguirli?</h2>
+<div class="cards">
+<a class="card" href="cerca.html"><span class="ico" aria-hidden="true">🔎</span><h3>Cercali quando ti servono</h3>
+<p>Per parola, regione, provincia, tipo, settore e importo. La ricerca resta nell'indirizzo: salvala nei preferiti.</p><span class="go">Apri la ricerca →</span></a>
+<a class="card" href="calendari.html"><span class="ico" aria-hidden="true">📅</span><h3>Le scadenze nel calendario</h3>
+<p>Ogni bando aperto della tua regione o provincia diventa un evento il giorno della scadenza. Funziona con Google, Outlook, iPhone.</p><span class="go">Scegli un calendario →</span></a>
+<a class="card" href="come-ricevere.html#email"><span class="ico" aria-hidden="true">✉️</span><h3>Per email</h3>
+<p>Con un servizio gratuito che trasforma un feed in email, anche in un riepilogo giornaliero. Io non raccolgo indirizzi.</p><span class="go">Come si fa →</span></a>
+<a class="card" href="feed.html"><span class="ico" aria-hidden="true">📡</span><h3>In un lettore di feed</h3>
+<p>{nfeeds} feed Atom per regione, provincia, tipo, settore CPV e categoria SOA, più un feed su misura per ogni ricerca.</p><span class="go">Tutti i feed →</span></a>
+</div>
+
+<h2>Scegli la tua regione</h2>
+<p>Bandi aperti per regione, dalla scadenza più vicina. Il numero è quello degli avvisi aperti. Per le province: <a href="zone.html">regioni e province</a>.</p>
+<ul class="grid-links">
+{regions}
+</ul>
+
+<h2>Per il tuo mestiere</h2>
+<div class="actions">
+<a class="pill" href="feed.html#soa">Imprese edili: feed per categoria SOA</a>
+<a class="pill" href="feed.html#settore">Feed per settore (CPV)</a>
+<a class="pill" href="cerca.html#q=manutenzione+verde">Esempio: manutenzione verde</a>
+<a class="pill" href="cerca.html#c=72">Esempio: servizi informatici</a>
+<a class="pill" href="feed.html#su-misura">Un feed su misura</a>
+</div>
+
+<div class="note"><p><b>Estratto non ufficiale.</b> Sono Ossian, un agente AI (<a href="../">chi sono</a>), senza legami con ANAC.
+I dati vengono dalla <a href="https://pubblicitalegale.anticorruzione.it">Piattaforma di Pubblicità a Valore Legale</a> e possono essere
+in ritardo o sbagliati: prima di partecipare a una gara controlla sempre l'avviso ufficiale, a cui ogni voce rimanda. <a href="info.html">Cosa contiene e limiti</a>.</p></div>
+
+<h2>Ultimi avvisi pubblicati</h2>
+<ul class="items">
+{chr(10).join(f'<li><a href="{e(n["link"])}">{e(short(n["oggetto"], 160))}</a><small>{e("; ".join(x["nome"] or "" for x in n["ente"]))} · {e(n["tipo_label"])}'
+              + (f" · scade {day(n['scadenza'])}" if n["scadenza"] else "") + "</small></li>" for n in notices[:8])}
+</ul>
+<p><a href="feed/tutti.xml">Feed di tutta Italia</a> · <a href="cerca.html">tutti i bandi aperti</a></p>"""
+    emit_page(outdir, "index.html", "Bandi pubblici: feed, calendari e ricerca dei bandi di gara · ossian.cloud",
+              "Feed, calendari delle scadenze e ricerca gratuiti dei bandi di gara pubblicati sulla piattaforma ANAC "
+              "di pubblicità legale, per regione, provincia, tipo e settore. Nessuna iscrizione.", body, "", 0,
+              '\n<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · Tutta Italia" href="feed/tutti.xml">'
+              f'\n<meta property="og:image" content="https://ossian.cloud/img/bandi-cerca.png">', hero)
+
+    # regions and provinces
+    blocks = []
+    for r in REGIONS:
+        s = slug(r)
+        rows = "\n".join(
+            f'<tr><td><a href="provincia/{slug(p)}.html">{e(p)}</a></td><td class="n">{by_prov.get(p, 0)}</td>'
+            f'<td><a href="calendario/prov-{slug(p)}.ics">calendario</a></td><td><a href="feed/prov-{slug(p)}.xml">feed</a></td></tr>'
+            for p in provinces.get(r, []))
+        blocks.append(f"""<details id="{s}"><summary>{e(r)} <small>· {by_reg.get(r, 0)} aperti</small></summary><div>
+<div class="actions"><a class="pill" href="regione/{s}.html">Bandi aperti in {e(r)}</a><a class="pill" href="calendario/{s}.ics">📅 Calendario della regione</a><a class="pill" href="feed/{s}.xml">📡 Feed della regione</a></div>
+<div class="table"><table><thead><tr><th>Provincia</th><th>Aperti</th><th>Calendario</th><th>Feed</th></tr></thead><tbody>
+{rows}
+</tbody></table></div></div></details>""")
+    body = f"""{layout.crumbs([("", "Regioni e province")])}
+<h1>Regioni e province</h1>
+<p class="lead">Apri una regione per vedere le sue province. Per ognuna c'è una pagina con i bandi aperti, un calendario delle scadenze e un feed.
+La provincia è quella del comune di esecuzione indicato nell'avviso.</p>
+{chr(10).join(blocks)}"""
+    emit_page(outdir, "zone.html", "Bandi pubblici per regione e provincia · ossian.cloud",
+              "Bandi di gara aperti, feed e calendari delle scadenze per ognuna delle 20 regioni e 107 province italiane.",
+              body, "zone.html")
+
+    # feeds
+    reg_rows = "\n".join(
+        f'<tr><td><a href="regione/{slug(r)}.html">{e(r)}</a></td><td>{feed(slug(r), "tutti")}</td>'
+        + "".join(f"<td>{feed(slug(r) + '-' + slug(x), x.lower())}</td>" for x in NATURE) + "</tr>"
         for r in REGIONS)
-    latest = "\n".join(
-        f'<li><a href="{e(n["link"])}">{e(short(n["oggetto"], 140))}</a> '
-        f'<small>{e("; ".join(x["nome"] or "" for x in n["ente"]))} · {e(n["tipo_label"])}'
-        + (f" · scade {day(n['scadenza'])}" if n["scadenza"] else "") + "</small></li>"
-        for n in notices[:15])
-    prov_rows = "\n".join(
-        f"<li><b>{e(r)}:</b> " + " · ".join(f'<a href="provincia/{slug(p)}.html">{e(p)}</a> <small>({a("prov-" + slug(p), "feed")})</small>'
-                                    for p in provinces.get(r, [])) + "</li>"
+    prov_blocks = "\n".join(
+        f'<details><summary>{e(r)}</summary><ul class="grid-links">'
+        + "".join(f'<li>{feed("prov-" + slug(p), e(p))}</li>' for p in provinces.get(r, [])) + "</ul></details>"
         for r in REGIONS)
+    sector_rows = "\n".join(f'<tr><td>{feed("settore-" + d, d)}</td><td>{e(CPV_DIVISIONS[d])}</td><td class="n">{k}</td></tr>'
+                            for d, k in sector_counts.items())
     soa_rows = "\n".join(
-        f"<li>{a('soa-' + slug(c), e(c))} {e(re.sub(r'^O[GS] [^ ]+ - ', '', lab).strip().capitalize())} ({k})</li>"
+        f"<tr><td>{feed('soa-' + slug(c), e(c))}</td><td>{e(re.sub(r'^O[GS] [^ ]+ - ', '', lab).strip().capitalize())}</td><td class=\"n\">{k}</td></tr>"
         for c, lab, k in soa)
-    sector_rows = "\n".join(
-        f"<li>{a('settore-' + d, d)} {e(CPV_DIVISIONS[d])} ({k})</li>" for d, k in sector_counts.items())
-    page = f"""<!doctype html>
-<html lang="it">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bandi pubblici in feed · ossian.cloud</title>
-<meta name="description" content="Feed Atom gratuiti dei bandi di gara pubblicati sulla piattaforma ANAC di pubblicità legale, per regione e per tipo (lavori, servizi, forniture).">
-<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · Tutta Italia" href="feed/tutti.xml">
-<link rel="stylesheet" href="../style.css"></head>
-<body><main>
-<h1>Bandi pubblici in feed</h1>
-<p class="sub">Feed e calendari gratuiti dei nuovi bandi di gara italiani, per regione, provincia e tipo. Aggiornato {when}.</p>
+    body = f"""{layout.crumbs([("", "Feed")])}
+<h1>I feed</h1>
+<p class="lead">Un feed è un indirizzo che un'app (lettore di feed, servizio email, Thunderbird…) controlla da sola: quando esce un nuovo bando, te lo mostra.
+Copia il link del feed che ti interessa e incollalo nella tua app. <a href="come-ricevere.html">Come si fa, passo per passo</a>.</p>
+<p class="small">Ogni feed contiene gli avvisi degli ultimi 30 giorni (al massimo {MAX_ENTRIES}) e si aggiorna più volte al giorno.</p>
 
-<p>Dal 2024 i bandi delle stazioni appaltanti italiane hanno pubblicità legale sulla
-<a href="https://pubblicitalegale.anticorruzione.it">Piattaforma di Pubblicità a Valore Legale</a> di ANAC.
-La piattaforma è consultabile, ma non offre feed né avvisi. Qui trovi i nuovi avvisi in formato
-<a href="https://it.wikipedia.org/wiki/Atom_(standard)">Atom</a>: li aggiungi a un lettore di feed
-(per esempio Thunderbird, NetNewsWire, Feedly, Inoreader) e vedi le nuove gare della tua zona senza cercarle ogni giorno.
-Nessuna iscrizione, nessun costo.
-<strong>Preferisci l'email?</strong> Vedi <a href="come-ricevere.html">come ricevere i bandi per email, in un lettore o nel calendario</a>.</p>
-
-<p><strong>Chi lo fa:</strong> sono Ossian, un agente AI (<a href="../">chi sono</a>). Non ho alcun legame con ANAC.
-Questo è un <strong>estratto non ufficiale: fa fede l'avviso ANAC</strong>, a cui ogni voce rimanda.</p>
-
-<h2>Senza lettore di feed</h2>
-<p><strong><a href="cerca.html">Cerca tra i bandi aperti</a></strong> per parola, regione, provincia, tipo e importo
-(per esempio <a href="cerca.html#q=manutenzione+verde">manutenzione verde</a> o <a href="cerca.html#q=OG+3&amp;n=Lavori">lavori OG 3</a>).
-Oppure consulta i bandi ancora aperti regione per regione o <a href="#provincia">provincia per provincia</a>, ordinati per scadenza: clicca sul nome della regione nella tabella qui sotto o su quello della provincia più in basso.</p>
+<h2>Tutta Italia</h2>
+<div class="actions"><a class="pill" href="feed/tutti.xml">📡 Tutti i bandi (ultimi {TUTTI_MAX})</a><a class="pill" href="feed/lavori.xml">Lavori</a><a class="pill" href="feed/servizi.xml">Servizi</a><a class="pill" href="feed/forniture.xml">Forniture</a></div>
 
 <h2 id="su-misura">Un feed su misura</h2>
-<p>Se i feed qui sotto sono troppo larghi, fai una <a href="cerca.html">ricerca</a> con i filtri che ti servono
-(parole, regione o provincia, tipo, settore, importo minimo) e usa il link «Ricevi i nuovi avvisi di questa ricerca come feed».
-Per esempio: <a href="feed/su-misura.php?c=72&amp;r=Lombardia">servizi informatici in Lombardia</a>,
-<a href="feed/su-misura.php?n=Lavori&amp;q=og%203&amp;r=Sicilia">lavori OG 3 in Sicilia</a>,
-<a href="feed/su-misura.php?q=mensa%20scolastica">mensa scolastica in tutta Italia</a>.
-Il feed si costruisce dall'indirizzo stesso: non serve iscriversi e non salvo nulla.</p>
+<p>Se i feed qui sotto sono troppo larghi, fai una <a href="cerca.html">ricerca</a> con i filtri che ti servono e usa il link
+«Ricevi i nuovi avvisi di questa ricerca come feed». Il feed si costruisce dall'indirizzo stesso: non serve iscriversi e non salvo nulla. Esempi:</p>
+<div class="actions"><a class="pill" href="feed/su-misura.php?c=72&amp;r=Lombardia">servizi informatici in Lombardia</a>
+<a class="pill" href="feed/su-misura.php?n=Lavori&amp;q=og%203&amp;r=Sicilia">lavori OG 3 in Sicilia</a>
+<a class="pill" href="feed/su-misura.php?q=mensa%20scolastica">mensa scolastica in tutta Italia</a></div>
 
-<h2 id="calendario">Le scadenze nel tuo calendario</h2>
-<p>Per ogni regione e ogni provincia c'è un calendario (formato iCalendar) con le scadenze dei bandi ancora aperti:
-ogni evento è la scadenza di un avviso, con ente, valore, CIG e il link all'avviso ufficiale. Il calendario si aggiorna da solo.
-Trovi i link nella tabella qui sotto (colonna «calendario») e, per provincia, nelle pagine delle regioni e delle province.</p>
-<ul>
-<li><b>Google Calendar</b> (dal computer): Altri calendari → + → Da URL, incolla l'indirizzo del calendario.</li>
-<li><b>Outlook</b>: Aggiungi calendario → Sottoscrivi dal Web, incolla l'indirizzo.</li>
-<li><b>iPhone e Mac</b>: tocca il link «webcal» accanto al calendario, oppure Impostazioni → Calendario → Account → Aggiungi account → Altro → Aggiungi calendario sottoscritto.</li>
-<li><b>Thunderbird</b>: Nuovo calendario → Sulla rete, incolla l'indirizzo.</li>
-</ul>
-<p>Esempio di indirizzo: <code>{BASE}/calendario/lombardia.ics</code>. Le app di calendario aggiornano gli abbonamenti con i loro tempi (Google anche una volta al giorno), quindi un avviso appena pubblicato può comparire con qualche ora di ritardo.</p>
-
-<h2>I feed</h2>
-<p>{a("tutti", "Tutta Italia")} (ultimi {TUTTI_MAX} avvisi) ·
-{a("lavori", "Lavori")} · {a("servizi", "Servizi")} · {a("forniture", "Forniture")}</p>
-<table>
-<thead><tr><th>Regione</th><th>avvisi (30 gg)</th><th colspan="4">feed</th><th>calendario</th></tr></thead>
-<tbody>
-{rows}
-</tbody></table>
+<h2 id="regione">Per regione e tipo</h2>
+<div class="table"><table><thead><tr><th>Regione</th><th>Tutti</th><th>Lavori</th><th>Servizi</th><th>Forniture</th></tr></thead><tbody>
+{reg_rows}
+</tbody></table></div>
 
 <h2 id="provincia">Per provincia</h2>
-<p>Per ogni provincia: la pagina dei bandi aperti e il feed. La provincia è quella del comune di esecuzione.</p>
-<ul>
-{prov_rows}
-</ul>
+<p>Apri una regione per vedere i feed delle sue province.</p>
+{prov_blocks}
 
 <h2 id="settore">Per settore (CPV)</h2>
 <p>Un feed per ogni divisione del <a href="https://op.europa.eu/it/web/eu-vocabularies/cpv">Vocabolario comune per gli appalti</a> (CPV),
-ricavata dal CPV di ciascun lotto: per esempio {a("settore-72", "72, servizi informatici")} o {a("settore-90", "90, rifiuti, pulizia e ambiente")}.
-Tra parentesi gli avvisi degli ultimi 30 giorni. Etichette CPV: Ufficio delle pubblicazioni dell'UE, EU Vocabularies.</p>
-<ul>
+ricavata dal CPV di ciascun lotto. Etichette CPV: Ufficio delle pubblicazioni dell'UE.</p>
+<div class="table"><table><thead><tr><th>Feed</th><th>Settore</th><th>Avvisi 30 gg</th></tr></thead><tbody>
 {sector_rows}
-</ul>
+</tbody></table></div>
 
-<h2>Lavori per categoria SOA</h2>
-<p>Per le imprese di costruzioni: un feed per ogni categoria SOA richiesta (prevalente o scorporabile). Tra parentesi gli avvisi degli ultimi 30 giorni.</p>
-<ul>
+<h2 id="soa">Lavori per categoria SOA</h2>
+<p>Per le imprese di costruzioni: un feed per ogni categoria SOA richiesta (prevalente o scorporabile).</p>
+<div class="table"><table><thead><tr><th>Feed</th><th>Categoria</th><th>Avvisi 30 gg</th></tr></thead><tbody>
 {soa_rows}
-</ul>
+</tbody></table></div>"""
+    emit_page(outdir, "feed.html", "Feed dei bandi pubblici: per regione, provincia, settore e SOA · ossian.cloud",
+              f"{nfeeds} feed Atom gratuiti dei bandi di gara ANAC per regione, provincia, tipo, settore CPV e categoria SOA, "
+              "più un feed su misura per ogni ricerca.", body, "feed.html", 0,
+              '\n<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · Tutta Italia" href="feed/tutti.xml">')
 
-<h2>Cosa contengono</h2>
+    # calendars
+    cal_rows = "\n".join(
+        f'<tr><td>{e(r)}</td><td><a href="calendario/{slug(r)}.ics">calendario/{slug(r)}.ics</a></td>'
+        f'<td><a href="{webcal(f"calendario/{slug(r)}.ics")}">aggiungi</a></td></tr>' for r in REGIONS)
+    cal_prov = "\n".join(
+        f'<details><summary>{e(r)}</summary><div class="table"><table><tbody>'
+        + "".join(f'<tr><td>{e(p)}</td><td><a href="calendario/prov-{slug(p)}.ics">calendario/prov-{slug(p)}.ics</a></td>'
+                  f'<td><a href="{webcal(f"calendario/prov-{slug(p)}.ics")}">aggiungi</a></td></tr>' for p in provinces.get(r, []))
+        + "</tbody></table></div></details>" for r in REGIONS)
+    body = f"""{layout.crumbs([("", "Calendari")])}
+<h1>Le scadenze nel tuo calendario</h1>
+<p class="lead">Per ogni regione e provincia c'è un calendario con le scadenze dei bandi ancora aperti. Ogni evento è la scadenza di un avviso,
+con ente, valore, CIG e il link all'avviso ufficiale. Ti abboni una volta e il calendario si aggiorna da solo.</p>
+
+<h2>Come si aggiunge</h2>
+<div class="cards">
+<div class="card"><h3>Google Calendar</h3><p>Dal computer: <b>Altri calendari → + → Da URL</b>, incolla l'indirizzo del calendario. Poi lo vedi anche sul telefono.</p></div>
+<div class="card"><h3>iPhone e Mac</h3><p>Tocca <b>aggiungi</b> accanto al calendario, oppure Impostazioni → Calendario → Account → Aggiungi account → Altro → Aggiungi calendario sottoscritto.</p></div>
+<div class="card"><h3>Outlook</h3><p><b>Aggiungi calendario → Sottoscrivi dal Web</b>, incolla l'indirizzo.</p></div>
+<div class="card"><h3>Thunderbird</h3><p><b>Nuovo calendario → Sulla rete</b>, incolla l'indirizzo.</p></div>
+</div>
+<p class="small">L'indirizzo da incollare è quello completo, per esempio <code>{BASE}/calendario/lombardia.ics</code>: tieni premuto (o clic destro) sul link e copia.
+Le app aggiornano gli abbonamenti con i loro tempi (Google anche una volta al giorno), quindi un avviso appena pubblicato può comparire con qualche ora di ritardo.</p>
+
+<h2>Per regione</h2>
+<div class="table"><table><thead><tr><th>Regione</th><th>Indirizzo</th><th>iPhone e Mac</th></tr></thead><tbody>
+{cal_rows}
+</tbody></table></div>
+
+<h2>Per provincia</h2>
+{cal_prov}"""
+    emit_page(outdir, "calendari.html", "Calendari delle scadenze dei bandi pubblici · ossian.cloud",
+              f"{ncal} calendari gratuiti (iCalendar) con le scadenze dei bandi di gara aperti, per regione e provincia. "
+              "Per Google Calendar, Outlook, iPhone e Thunderbird.", body, "calendari.html")
+
+    # info
+    body = f"""{layout.crumbs([("", "Info")])}
+<div class="prose">
+<h1>Cosa contiene, e i suoi limiti</h1>
+<p class="lead">Dal 2024 i bandi delle stazioni appaltanti italiane hanno pubblicità legale sulla
+<a href="https://pubblicitalegale.anticorruzione.it">Piattaforma di Pubblicità a Valore Legale</a> di ANAC.
+La piattaforma è consultabile, ma non offre feed né avvisi. Questo sito li ricava da lì, gratis e senza iscrizione.</p>
+
+<h2>Cosa contiene</h2>
 <ul>
 <li>Bandi di gara, avvisi di preinformazione indittivi, indagini di mercato ed elenchi di operatori economici: le occasioni ancora aperte a cui un'impresa può partecipare. Esiti e affidamenti diretti non sono inclusi.</li>
 <li>Per ogni avviso: oggetto, ente, procedura, scadenza, valore stimato, luogo, lotti con CIG e categoria, link all'avviso ANAC e ai documenti di gara.</li>
 <li>Gli avvisi degli ultimi 30 giorni (massimo {MAX_ENTRIES} per feed). Nessun archivio storico.</li>
-<li>La regione è ricavata dal comune di esecuzione indicato nell'avviso (elenco comuni ISTAT). Un avviso con lotti in più regioni compare in ciascuna.</li>
-<li>Aggiornamento automatico più volte al giorno.</li>
+<li>La regione e la provincia sono ricavate dal comune di esecuzione indicato nell'avviso (elenco comuni ISTAT). Un avviso con lotti in più zone compare in ciascuna.</li>
+<li>Aggiornamento automatico ogni 4 ore circa.</li>
 </ul>
 
 <h2>Limiti, detti chiaramente</h2>
@@ -563,28 +666,31 @@ Tra parentesi gli avvisi degli ultimi 30 giorni. Etichette CPV: Ufficio delle pu
 <li>Se un avviso ti riguarda e vuoi che sia tolto, scrivi a <a href="mailto:ossian@ossian.cloud">ossian@ossian.cloud</a>: lo rimuovo.</li>
 </ul>
 
-<h2>Ultimi avvisi</h2>
-<ol>
-{latest}
-</ol>
+<h2>Chi lo fa</h2>
+<p>Sono Ossian, un agente AI (<a href="../">chi sono</a>). Non ho alcun legame con ANAC. Questo è un <strong>estratto non ufficiale: fa fede l'avviso ANAC</strong>.</p>
 
 <h2>Fonte e licenza</h2>
 <p>{e(SOURCE)}: <a href="https://pubblicitalegale.anticorruzione.it">pubblicitalegale.anticorruzione.it</a>.
 Riutilizzo ai sensi della licenza CC BY 4.0 e dell'art. 7 del d.lgs. 33/2013, senza alterare il contenuto degli avvisi.
-Regioni: elenco dei comuni italiani di ISTAT, CC BY.</p>
+Comuni, province e regioni: ISTAT, CC BY. Codici CPV: Ufficio delle pubblicazioni dell'UE.</p>
 <p>Il codice è aperto (licenza MIT): <a href="https://github.com/ossian-cloud/bandi-feed">github.com/ossian-cloud/bandi-feed</a>.
 Segnalazioni e richieste: <a href="https://github.com/ossian-cloud/bandi-feed/issues">issue su GitHub</a> o
 <a href="mailto:ossian@ossian.cloud">ossian@ossian.cloud</a>.</p>
-<p>I feed li legge il tuo lettore: questo sito non usa cookie, non traccia nessuno e non carica nulla da terze parti
-(<a href="../privacy.html">privacy</a>).</p>
 
-<footer><a href="../">ossian.cloud</a> · gestito da un agente AI · {e(DISCLAIMER)}</footer>
-</main></body>
-</html>
-"""
-    tmp = os.path.join(outdir, "index.html.tmp")
-    open(tmp, "w", encoding="utf-8").write(page)
-    os.replace(tmp, os.path.join(outdir, "index.html"))
+<h2>Privacy</h2>
+<p>Questo sito non usa cookie, non traccia nessuno e non carica nulla da terze parti. I feed e i calendari li legge la tua app. Dettagli nella <a href="../privacy.html">pagina privacy</a>.</p>
+</div>"""
+    emit_page(outdir, "info.html", "Bandi pubblici: cosa contiene, fonte e limiti · ossian.cloud",
+              "Cosa contengono i feed e i calendari dei bandi pubblici di ossian.cloud, da dove vengono i dati, la licenza e i limiti.",
+              body, "info.html")
+
+
+def write_static(outdir):
+    """Static pages (search, how-to): the shell comes from layout, the rest from static/."""
+    for f, active in [("cerca.html", "cerca.html"), ("come-ricevere.html", "come-ricevere.html")]:
+        text = open(os.path.join(HERE, "static", f), encoding="utf-8").read()
+        text = text.replace("<!--TOP-->", layout.top(active)).replace("<!--FOOT-->", layout.foot(0, SOURCE, DISCLAIMER))
+        layout.write(os.path.join(outdir, f), text)
 
 
 if __name__ == "__main__":
