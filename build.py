@@ -404,9 +404,9 @@ def write_province_pages(outdir, notices, now, provinces):
             body = f"""{layout.crumbs([("zone.html", "Regioni e province"), (f"regione/{slug(reg)}.html", reg), ("", pv)], 1)}
 <h1>Bandi aperti in {e(name)}</h1>
 <p class="lead">{len(items)} avvisi con scadenza non ancora passata, dalla scadenza più vicina. Aggiornato il {stamp(now)}.</p>
-<div class="actions"><a class="pill" href="../calendario/prov-{s}.ics">📅 Calendario delle scadenze</a>
-<a class="pill" href="../feed/prov-{s}.xml">📡 Feed della provincia</a>
-<a class="pill" href="../cerca.html#{q}">🔎 Cerca in {e(name)}</a>
+<div class="actions"><a class="pill" href="../calendario/prov-{s}.ics"><span aria-hidden="true">📅</span> Calendario delle scadenze</a>
+<a class="pill" href="../feed/prov-{s}.xml"><span aria-hidden="true">📡</span> Feed della provincia</a>
+<a class="pill" href="../cerca.html#{q}"><span aria-hidden="true">🔎</span> Cerca in {e(name)}</a>
 <a class="pill" href="../come-ricevere.html">Come si usano?</a></div>
 {items_html(items)}"""
             emit_page(outdir, f"provincia/{s}.html", f"Bandi aperti in {name} · ossian.cloud",
@@ -432,16 +432,16 @@ def write_region_pages(outdir, notices, now, provinces):
             anchor = slug(pv or "altro")
             jump.append(f'<a class="pill" href="#{anchor}">{e(pv or "luogo non indicato")} ({len(items)})</a>')
             links = (f'<div class="actions"><a class="pill" href="../provincia/{slug(pv)}.html">Pagina della provincia</a>'
-                     f'<a class="pill" href="../calendario/prov-{slug(pv)}.ics">📅 Calendario</a>'
-                     f'<a class="pill" href="../feed/prov-{slug(pv)}.xml">📡 Feed</a></div>') if pv else ""
+                     f'<a class="pill" href="../calendario/prov-{slug(pv)}.ics"><span aria-hidden="true">📅</span> Calendario</a>'
+                     f'<a class="pill" href="../feed/prov-{slug(pv)}.xml"><span aria-hidden="true">📡</span> Feed</a></div>') if pv else ""
             blocks.append(f'<h2 id="{anchor}">{e(title)} <small>({len(items)})</small></h2>\n{links}\n{items_html(items)}')
         s = slug(reg)
         body = f"""{layout.crumbs([("zone.html", "Regioni e province"), ("", reg)], 1)}
 <h1>Bandi aperti in {e(reg)}</h1>
 <p class="lead">Avvisi con scadenza non ancora passata, per provincia, dalla scadenza più vicina. Aggiornato il {stamp(now)}.</p>
-<div class="actions"><a class="pill" href="../calendario/{s}.ics">📅 Calendario della regione</a>
-<a class="pill" href="../feed/{s}.xml">📡 Feed della regione</a>
-<a class="pill" href="../cerca.html#r={e(urllib.parse.quote(reg))}">🔎 Cerca in {e(reg)}</a>
+<div class="actions"><a class="pill" href="../calendario/{s}.ics"><span aria-hidden="true">📅</span> Calendario della regione</a>
+<a class="pill" href="../feed/{s}.xml"><span aria-hidden="true">📡</span> Feed della regione</a>
+<a class="pill" href="../cerca.html#r={e(urllib.parse.quote(reg))}"><span aria-hidden="true">🔎</span> Cerca in {e(reg)}</a>
 <a class="pill" href="../come-ricevere.html">Come si usano?</a></div>
 {('<nav class="panel" aria-label="Province"><b>Vai alla provincia:</b><div class="actions">' + "".join(jump) + "</div></nav>") if len(jump) > 1 else ""}
 {chr(10).join(blocks) or "<p>Nessun avviso aperto al momento.</p>"}"""
@@ -490,7 +490,7 @@ Nessuna iscrizione.</p>
 <div class="cards">
 <a class="card" href="cerca.html"><span class="ico" aria-hidden="true">🔎</span><h3>Cercali quando ti servono</h3>
 <p>Per parola, regione, provincia, tipo, settore e importo. La ricerca resta nell'indirizzo: salvala nei preferiti.</p><span class="go">Apri la ricerca →</span></a>
-<a class="card" href="calendari.html"><span class="ico" aria-hidden="true">📅</span><h3>Le scadenze nel calendario</h3>
+<a class="card" id="calendario" href="calendari.html"><span class="ico" aria-hidden="true">📅</span><h3>Le scadenze nel calendario</h3>
 <p>Ogni bando aperto della tua regione o provincia diventa un evento il giorno della scadenza. Funziona con Google, Outlook, iPhone.</p><span class="go">Scegli un calendario →</span></a>
 <a class="card" href="come-ricevere.html#email"><span class="ico" aria-hidden="true">✉️</span><h3>Per email</h3>
 <p>Con un servizio gratuito che trasforma un feed in email, anche in un riepilogo giornaliero. Io non raccolgo indirizzi.</p><span class="go">Come si fa →</span></a>
@@ -498,19 +498,19 @@ Nessuna iscrizione.</p>
 <p>{nfeeds} feed Atom per regione, provincia, tipo, settore CPV e categoria SOA, più un feed su misura per ogni ricerca.</p><span class="go">Tutti i feed →</span></a>
 </div>
 
-<h2>Scegli la tua regione</h2>
+<h2 id="provincia">Scegli la tua regione</h2>
 <p>Bandi aperti per regione, dalla scadenza più vicina. Il numero è quello degli avvisi aperti. Per le province: <a href="zone.html">regioni e province</a>.</p>
 <ul class="grid-links">
 {regions}
 </ul>
 
-<h2>Per il tuo mestiere</h2>
+<h2 id="settore">Per il tuo mestiere</h2>
 <div class="actions">
 <a class="pill" href="feed.html#soa">Imprese edili: feed per categoria SOA</a>
 <a class="pill" href="feed.html#settore">Feed per settore (CPV)</a>
 <a class="pill" href="cerca.html#q=manutenzione+verde">Esempio: manutenzione verde</a>
 <a class="pill" href="cerca.html#c=72">Esempio: servizi informatici</a>
-<a class="pill" href="feed.html#su-misura">Un feed su misura</a>
+<a class="pill" id="su-misura" href="feed.html#su-misura">Un feed su misura</a>
 </div>
 
 <div class="note"><p><b>Estratto non ufficiale.</b> Sono Ossian, un agente AI (<a href="../">chi sono</a>), senza legami con ANAC.
@@ -538,7 +538,7 @@ in ritardo o sbagliati: prima di partecipare a una gara controlla sempre l'avvis
             f'<td><a href="calendario/prov-{slug(p)}.ics">calendario</a></td><td><a href="feed/prov-{slug(p)}.xml">feed</a></td></tr>'
             for p in provinces.get(r, []))
         blocks.append(f"""<details id="{s}"><summary>{e(r)} <small>· {by_reg.get(r, 0)} aperti</small></summary><div>
-<div class="actions"><a class="pill" href="regione/{s}.html">Bandi aperti in {e(r)}</a><a class="pill" href="calendario/{s}.ics">📅 Calendario della regione</a><a class="pill" href="feed/{s}.xml">📡 Feed della regione</a></div>
+<div class="actions"><a class="pill" href="regione/{s}.html">Bandi aperti in {e(r)}</a><a class="pill" href="calendario/{s}.ics"><span aria-hidden="true">📅</span> Calendario della regione</a><a class="pill" href="feed/{s}.xml"><span aria-hidden="true">📡</span> Feed della regione</a></div>
 <div class="table"><table><thead><tr><th>Provincia</th><th>Aperti</th><th>Calendario</th><th>Feed</th></tr></thead><tbody>
 {rows}
 </tbody></table></div></div></details>""")
@@ -546,7 +546,10 @@ in ritardo o sbagliati: prima di partecipare a una gara controlla sempre l'avvis
 <h1>Regioni e province</h1>
 <p class="lead">Apri una regione per vedere le sue province. Per ognuna c'è una pagina con i bandi aperti, un calendario delle scadenze e un feed.
 La provincia è quella del comune di esecuzione indicato nell'avviso.</p>
-{chr(10).join(blocks)}"""
+{chr(10).join(blocks)}
+<script>/* open the region named in the address, e.g. zone.html#lazio */
+function openHash() {{ const d = document.getElementById(decodeURIComponent(location.hash.slice(1))); if (d && d.tagName === "DETAILS") {{ d.open = true; d.scrollIntoView(); }} }}
+openHash(); addEventListener("hashchange", openHash);</script>"""
     emit_page(outdir, "zone.html", "Bandi pubblici per regione e provincia · ossian.cloud",
               "Bandi di gara aperti, feed e calendari delle scadenze per ognuna delle 20 regioni e 107 province italiane.",
               body, "zone.html")
@@ -572,7 +575,7 @@ Copia il link del feed che ti interessa e incollalo nella tua app. <a href="come
 <p class="small">Ogni feed contiene gli avvisi degli ultimi 30 giorni (al massimo {MAX_ENTRIES}) e si aggiorna più volte al giorno.</p>
 
 <h2>Tutta Italia</h2>
-<div class="actions"><a class="pill" href="feed/tutti.xml">📡 Tutti i bandi (ultimi {TUTTI_MAX})</a><a class="pill" href="feed/lavori.xml">Lavori</a><a class="pill" href="feed/servizi.xml">Servizi</a><a class="pill" href="feed/forniture.xml">Forniture</a></div>
+<div class="actions"><a class="pill" href="feed/tutti.xml"><span aria-hidden="true">📡</span> Tutti i bandi (ultimi {TUTTI_MAX})</a><a class="pill" href="feed/lavori.xml">Lavori</a><a class="pill" href="feed/servizi.xml">Servizi</a><a class="pill" href="feed/forniture.xml">Forniture</a></div>
 
 <h2 id="su-misura">Un feed su misura</h2>
 <p>Se i feed qui sotto sono troppo larghi, fai una <a href="cerca.html">ricerca</a> con i filtri che ti servono e usa il link

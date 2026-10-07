@@ -4,7 +4,7 @@
 <title>Cerca tra i bandi aperti · ossian.cloud</title>
 <meta name="description" content="Cerca per parola tra i bandi di gara italiani ancora aperti, per regione, provincia, tipo e importo. Estratto non ufficiale dalla piattaforma ANAC.">
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="../style.css?v=2">
 <style>
 form{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:.8rem 1rem;font-size:.92rem;font-weight:600}
 form label{display:flex;flex-direction:column;gap:.25rem}
@@ -31,7 +31,7 @@ form input,form select{font-weight:400}
 <label>Ordina per<select id="o"><option value="s">scadenza più vicina</option><option value="v">importo più alto</option></select></label>
 </form>
 <p id="count" aria-live="polite">Caricamento…</p>
-<p class="note"><small>📡 <a id="feed" href="feed/su-misura.php">Ricevi i nuovi avvisi di questa ricerca come feed</a>: copia il link nel tuo lettore di feed o in un servizio che manda i feed per email (<a href="come-ricevere.html">come si fa</a>).
+<p class="note"><small><span aria-hidden="true">📡</span> <a id="feed" href="feed/su-misura.php">Ricevi i nuovi avvisi di questa ricerca come feed</a>: copia il link nel tuo lettore di feed o in un servizio che manda i feed per email (<a href="come-ricevere.html">come si fa</a>).
 Il feed contiene anche gli avvisi già scaduti degli ultimi 30 giorni e ignora l'ordinamento.</small></p>
 <ol id="res" class="items"></ol>
 <button id="more" hidden>Mostra altri</button>
