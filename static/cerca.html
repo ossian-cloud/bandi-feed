@@ -9,7 +9,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta property="og:image" content="https://ossian.cloud/img/bandi-cerca.png">
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="../style.css?v=2">
+<link rel="stylesheet" href="../style.css?v=3">
 <style>
 form{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:.8rem 1rem;font-size:.92rem;font-weight:600}
 form label{display:flex;flex-direction:column;gap:.25rem}
@@ -96,7 +96,7 @@ function search() {
 function more() {
   for (const x of rows.slice(shown, shown + PAGE)) {
     const li = document.createElement("li"), a = document.createElement("a"), s = document.createElement("small");
-    a.href = /^(bandi|avvisi)\/[0-9a-f-]+$/.test(x[0]) ? D.base + x[0] : "#";
+    a.href = /^(bandi|avvisi)\/[0-9a-f-]+$/.test(x[0]) ? "avviso/" + x[0].split("/")[1] + ".html" : "#";
     a.textContent = x[1].length > 200 ? x[1].slice(0, 199) + "…" : x[1];
     s.textContent = [x[4] ? "scade " + when(x[4]) : "senza scadenza indicata", x[2], x[3], x[8].join(", "),
       x[5] ? euro(x[5]) : "", x[7].join(", ") || x[6].join(", ")].filter(Boolean).join(" · ");

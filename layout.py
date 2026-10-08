@@ -53,7 +53,7 @@ def head(title, description, depth=0, extra=""):
 <meta name="description" content="{html.escape(description)}">
 {og(title, description, extra)}
 <link rel="icon" href="{b}../favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="{b}../style.css?v=2">{extra}</head>
+<link rel="stylesheet" href="{b}../style.css?v=3">{extra}</head>
 <body>"""
 
 

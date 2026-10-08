@@ -207,6 +207,7 @@ def main(outdir):
         items = [n for n in notices if d in divisions(n)]
         sector_counts[d] = len(items)
         emit("settore-" + d, f"Settore CPV {d}: {short(CPV_DIVISIONS[d], 80)}", items)
+    indexable = write_notice_pages(outdir, notices, now)
     write_region_pages(outdir, notices, now, provinces)
     write_province_pages(outdir, notices, now, provinces)
     write_sector_pages(outdir, notices, now)
@@ -215,7 +216,7 @@ def main(outdir):
     write_custom(outdir, notices, now)
     ncal = len([f for f in os.listdir(os.path.join(outdir, "calendario")) if f.endswith(".ics")])
     write_pages(outdir, notices, now, provinces, [(c, labels[c], soa_counts[c]) for c in soa], sector_counts, len(feeds), ncal)
-    write_sitemap(outdir, now)
+    write_sitemap(outdir, now, indexable)
     json.dump({"updated": now, "notices": len(notices), "feeds": feeds},
               open(os.path.join(outdir, "feeds.json"), "w"), ensure_ascii=False, indent=1)
     print(f"{len(feeds)} feeds, {len(notices)} notices", file=sys.stderr)
@@ -232,6 +233,127 @@ def open_notices(notices, now):
             seen.add(n["appalto"])
             out.append(n)
     return out
+
+
+GRACE_DAYS = 14  # a notice's page stays up (noindex) this long after its deadline
+
+
+def latest_per_procedure(notices):
+    """With notices newest first: the most recent notice of each procedure (a rettifica supersedes the original)."""
+    seen, out = set(), []
+    for n in notices:
+        if n["appalto"] not in seen:
+            seen.add(n["appalto"])
+            out.append(n)
+    return out
+
+
+def paged_notices(notices, now):
+    """Notices that get their own page: latest of each procedure, unless its deadline passed over GRACE_DAYS ago."""
+    cut = (dt.datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ") - dt.timedelta(days=GRACE_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
+    return [n for n in latest_per_procedure(notices) if not n["scadenza"] or n["scadenza"][:19] >= cut]
+
+
+PAGED = set()  # ids of notices with a page in avviso/, filled by write_notice_pages
+
+
+def href(n, depth=0):
+    """Our page for a notice if it has one, else the official notice."""
+    return f'{"../" * depth}avviso/{n["id"]}.html' if n["id"] in PAGED else n["link"]
+
+
+def when(iso):
+    t = dt.datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(ROME)
+    return t.strftime("%d/%m/%Y") + ("" if t.strftime("%H:%M") in ("00:00", "23:59") else t.strftime(" alle %H:%M"))
+
+
+def write_notice_pages(outdir, notices, now):
+    """One page per recent procedure (avviso/<id>.html): every field we have, links to the official notice and
+    documents, and the pages, feeds and searches where similar notices appear. Closed ones are noindex."""
+    e = html.escape
+    os.makedirs(os.path.join(outdir, "avviso"), exist_ok=True)
+    pages = paged_notices(notices, now)
+    PAGED.clear()
+    PAGED.update(n["id"] for n in pages)
+    indexable = []
+    for n in pages:
+        lots = n["lotti"]
+        annulled = bool(lots) and all(l["annullato"] for l in lots)
+        expired = bool(n["scadenza"]) and n["scadenza"][:19] < now[:19]
+        ente = "; ".join(x["nome"] or "" for x in n["ente"]) or "Ente non indicato"
+        total = sum(l["valore"] or 0 for l in lots)
+        regs = sorted({l["regione"] for l in lots if l["regione"]})
+        provs = sorted({(l["regione"], l["prov"]) for l in lots if l.get("prov")})
+        places = sorted({l["comune"].title() for l in lots if l["comune"]})
+        divs = sorted(divisions(n))
+        if annulled:
+            status = '<p class="note"><b>Annullato.</b> Secondo la piattaforma ANAC tutti i lotti di questa procedura sono stati annullati.</p>'
+        elif expired:
+            status = f'<p class="note"><b>Scaduto</b> il {when(n["scadenza"])}. La pagina resta per qualche giorno e poi viene tolta.</p>'
+        else:
+            status = ""
+        rows = [("Oggetto", n["oggetto"] if len(n["oggetto"] or "") > 180 else None), ("Tipo", n["tipo_label"] + (" (rettifica di un avviso precedente)" if n["rettifica"] else "")),
+                ("Ente", ente), ("Procedura", n["procedura"]),
+                ("Pubblicato", when(n["pubblicato"]) if n["pubblicato"] else None),
+                ("Scadenza", when(n["scadenza"]) if n["scadenza"] else "non indicata"),
+                ("Valore stimato", euro(total) if total else None),
+                ("Luogo", ", ".join(places) + (f" ({', '.join(regs)})" if regs else "") if places else ", ".join(regs) or None),
+                ("CIG", ", ".join(l["cig"] for l in lots if l["cig"]) if len(lots) <= 3 else None)]
+        facts = "\n".join(f"<tr><th>{k}</th><td>{e(v)}</td></tr>" for k, v in rows if v)
+        lot_html = ""
+        if lots:
+            lis = []
+            for i, l in enumerate(lots[:60], 1):
+                code = CPV_CODE.get(l["cpv"]) if l["cpv"] else None
+                cpv = (f'<a href="../settore/{code[:2]}.html">{e(cpv_text(l["cpv"]))}</a>' if code
+                       else e(l["cpv"]) if l["cpv"] else "")
+                bits = [e(x) for x in [l["natura"], soa(l), euro(l["valore"]) if l["valore"] else None,
+                                       f"CIG {l['cig']}" if l["cig"] else None,
+                                       l["comune"].title() if l["comune"] else None,
+                                       "annullato" if l["annullato"] else None] if x]
+                text = l["descrizione"] if l["descrizione"] and l["descrizione"] != n["oggetto"] else ""
+                lis.append(f"<li>{e(short(text, 600))}<small>"
+                           + " · ".join(([cpv] if cpv else []) + bits) + "</small></li>")
+            more = f"<p class=\"small\">E altri {len(lots) - 60} lotti: vedi l'avviso ufficiale.</p>" if len(lots) > 60 else ""
+            lot_html = f'<h2>{"Lotto" if len(lots) == 1 else f"Lotti ({len(lots)})"}</h2>\n<ul class="items">\n' + "\n".join(lis) + "\n</ul>" + more
+        links = [f'<a class="btn" href="{e(n["link"])}">Avviso ufficiale su ANAC</a>']
+        if n["documenti"]:
+            links.append(f'<a class="btn ghost" href="{e(n["documenti"])}">Documenti di gara</a>')
+        if n["ted"]:
+            links.append(f'<a class="btn ghost" href="{e(n["ted"])}">Avviso europeo (TED)</a>')
+        follow = [f'<a class="pill" href="../provincia/{slug(pv)}.html">Bandi aperti in {e(prov_name(pv))}</a>' for _, pv in provs[:4]]
+        follow += [f'<a class="pill" href="../regione/{slug(r)}.html">Bandi aperti in {e(r)}</a>' for r in regs[:3] if len(provs) != 1]
+        follow += [f'<a class="pill" href="../settore/{d}.html">Settore: {e(short(CPV_DIVISIONS[d], 50))}</a>' for d in divs[:3]]
+        if regs and divs:
+            q = e(urllib.parse.urlencode({"r": regs[0], "c": divs[0]}))
+            follow.append(f'<a class="pill" href="../feed/su-misura.php?{q}"><span aria-hidden="true">📡</span> Feed: nuovi bandi di questo settore in {e(regs[0])}</a>')
+        follow_html = ('<h2>Bandi simili</h2>\n<div class="actions">' + "\n".join(follow) + "</div>") if follow else ""
+        crumb = [("", "Avviso")]
+        if len(provs) == 1:
+            crumb = [(f"regione/{slug(provs[0][0])}.html", provs[0][0]), (f"provincia/{slug(provs[0][1])}.html", provs[0][1])] + crumb
+        elif len(regs) == 1:
+            crumb = [(f"regione/{slug(regs[0])}.html", regs[0])] + crumb
+        body = f"""{layout.crumbs(crumb, 1)}
+<h1 class="long">{e(short(n["oggetto"] or "Avviso senza oggetto", 180))}</h1>
+<p class="lead">{e(n["tipo_label"])} di {e(ente)}{f" · scadenza {when(n['scadenza'])}" if n["scadenza"] and not expired else ""}</p>
+{status}
+<div class="cta">{" ".join(links)}</div>
+<div class="table"><table class="facts"><tbody>
+{facts}
+</tbody></table></div>
+{lot_html}
+{follow_html}
+<p class="small">Estratto non ufficiale preparato da un agente AI: i dati possono essere in ritardo o sbagliati. Prima di partecipare controlla sempre l'avviso ufficiale e i documenti di gara.</p>"""
+        place = places[0] if len(places) == 1 else (regs[0] if len(regs) == 1 else "")
+        title = f"{short(n['oggetto'] or 'Avviso', 90)} · {short(ente, 60)} · ossian.cloud"
+        desc = (f"{n['tipo_label']} di {short(ente, 80)}" + (f", {place}" if place else "")
+                + (f", scadenza {day(n['scadenza'])}" if n["scadenza"] else "")
+                + (f", valore stimato {euro(total)}" if total else "") + ". Estratto non ufficiale dalla piattaforma ANAC.")
+        extra = '\n<meta name="robots" content="noindex">' if annulled or expired else ""
+        emit_page(outdir, f"avviso/{n['id']}.html", title, desc, body, "", 1, extra)
+        if not extra:
+            indexable.append(n["id"])
+    return indexable
 
 
 def write_calendars(outdir, notices, now, provinces):
@@ -343,12 +465,13 @@ def write_custom(outdir, notices, now):
     shutil.copy(os.path.join(HERE, "static", "su-misura.php"), os.path.join(outdir, "feed", "su-misura.php"))
 
 
-def write_sitemap(outdir, now):
+def write_sitemap(outdir, now, notice_ids=()):
     """sitemap.xml for the HTML pages only (feeds and calendars are for readers, not search engines)."""
     pages = ["", "cerca.html", "zone.html", "feed.html", "calendari.html", "come-ricevere.html", "info.html"] + sorted(f"regione/{f}" for f in os.listdir(os.path.join(outdir, "regione"))
                                           if f.endswith(".html"))
     pages += sorted(f"provincia/{f}" for f in os.listdir(os.path.join(outdir, "provincia")) if f.endswith(".html"))
     pages += ["settori.html"] + sorted(f"settore/{f}" for f in os.listdir(os.path.join(outdir, "settore")) if f.endswith(".html"))
+    pages += [f"avviso/{i}.html" for i in notice_ids]
     urls = "".join(f"<url><loc>{BASE}/{p}</loc><lastmod>{now}</lastmod></url>\n" for p in pages)
     with open(os.path.join(outdir, "sitemap.xml"), "w") as f:
         f.write('<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -366,7 +489,7 @@ def notice_items(items, limit=None):
         meta = [("scade " + day(n["scadenza"])) if n["scadenza"] else "senza scadenza indicata",
                 "; ".join(x["nome"] or "" for x in n["ente"]), n["tipo_label"], nat,
                 euro(total) if total else None]
-        lis.append(f'<li><a href="{e(n["link"])}">{e(short(n["oggetto"], 180))}</a>'
+        lis.append(f'<li><a href="{e(href(n, 1))}">{e(short(n["oggetto"], 180))}</a>'
                    + (' <span class="tag">rettifica</span>' if n["rettifica"] else "")
                    + f'<small>{e(" · ".join(m for m in meta if m))}</small></li>')
     return lis
@@ -564,7 +687,7 @@ in ritardo o sbagliati: prima di partecipare a una gara controlla sempre l'avvis
 
 <h2>Ultimi avvisi pubblicati</h2>
 <ul class="items">
-{chr(10).join(f'<li><a href="{e(n["link"])}">{e(short(n["oggetto"], 160))}</a><small>{e("; ".join(x["nome"] or "" for x in n["ente"]))} · {e(n["tipo_label"])}'
+{chr(10).join(f'<li><a href="{e(href(n))}">{e(short(n["oggetto"], 160))}</a><small>{e("; ".join(x["nome"] or "" for x in n["ente"]))} · {e(n["tipo_label"])}'
               + (f" · scade {day(n['scadenza'])}" if n["scadenza"] else "") + "</small></li>" for n in notices[:8])}
 </ul>
 <p><a href="feed/tutti.xml">Feed di tutta Italia</a> · <a href="cerca.html">tutti i bandi aperti</a></p>"""
@@ -702,6 +825,7 @@ La piattaforma è consultabile, ma non offre feed né avvisi. Questo sito li ric
 <ul>
 <li>Bandi di gara, avvisi di preinformazione indittivi, indagini di mercato ed elenchi di operatori economici: le occasioni ancora aperte a cui un'impresa può partecipare. Esiti e affidamenti diretti non sono inclusi.</li>
 <li>Per ogni avviso: oggetto, ente, procedura, scadenza, valore stimato, luogo, lotti con CIG e categoria, link all'avviso ANAC e ai documenti di gara.</li>
+<li>Ogni procedura ancora aperta ha una sua pagina, con tutti questi dati e i link a bandi simili. La pagina resta {GRACE_DAYS} giorni dopo la scadenza (senza indicizzazione) e poi viene tolta. Se una rettifica corregge un avviso, la pagina mostra la rettifica.</li>
 <li>Gli avvisi degli ultimi 30 giorni (massimo {MAX_ENTRIES} per feed). Nessun archivio storico.</li>
 <li>La regione e la provincia sono ricavate dal comune di esecuzione indicato nell'avviso (elenco comuni ISTAT). Un avviso con lotti in più zone compare in ciascuna.</li>
 <li>Aggiornamento automatico ogni 4 ore circa.</li>
