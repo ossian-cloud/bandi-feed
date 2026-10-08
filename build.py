@@ -209,6 +209,7 @@ def main(outdir):
         emit("settore-" + d, f"Settore CPV {d}: {short(CPV_DIVISIONS[d], 80)}", items)
     write_region_pages(outdir, notices, now, provinces)
     write_province_pages(outdir, notices, now, provinces)
+    write_sector_pages(outdir, notices, now)
     write_calendars(outdir, notices, now, provinces)
     write_search(outdir, notices, now)
     write_custom(outdir, notices, now)
@@ -221,10 +222,16 @@ def main(outdir):
 
 
 def open_notices(notices, now):
-    """Notices whose deadline hasn't passed and that aren't fully cancelled."""
-    return [n for n in notices
-            if (not n["scadenza"] or n["scadenza"][:19] >= now[:19])
-            and not all(l["annullato"] for l in n["lotti"])]
+    """Notices whose deadline hasn't passed and that aren't fully cancelled, one per procedure (appalto):
+    with notices newest first, a rettifica hides the original it corrects."""
+    seen, out = set(), []
+    for n in notices:
+        if (n["scadenza"] and n["scadenza"][:19] < now[:19]) or all(l["annullato"] for l in n["lotti"]):
+            continue
+        if n["appalto"] not in seen:
+            seen.add(n["appalto"])
+            out.append(n)
+    return out
 
 
 def write_calendars(outdir, notices, now, provinces):
@@ -341,6 +348,7 @@ def write_sitemap(outdir, now):
     pages = ["", "cerca.html", "zone.html", "feed.html", "calendari.html", "come-ricevere.html", "info.html"] + sorted(f"regione/{f}" for f in os.listdir(os.path.join(outdir, "regione"))
                                           if f.endswith(".html"))
     pages += sorted(f"provincia/{f}" for f in os.listdir(os.path.join(outdir, "provincia")) if f.endswith(".html"))
+    pages += ["settori.html"] + sorted(f"settore/{f}" for f in os.listdir(os.path.join(outdir, "settore")) if f.endswith(".html"))
     urls = "".join(f"<url><loc>{BASE}/{p}</loc><lastmod>{now}</lastmod></url>\n" for p in pages)
     with open(os.path.join(outdir, "sitemap.xml"), "w") as f:
         f.write('<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -414,6 +422,42 @@ def write_province_pages(outdir, notices, now, provinces):
                       "calendario delle scadenze. Estratto non ufficiale dalla piattaforma ANAC.",
                       body, "zone.html", 1,
                       f'\n<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · {e(pv)}" href="../feed/prov-{s}.xml">')
+
+
+def write_sector_pages(outdir, notices, now):
+    """One HTML page per CPV division with its open notices, plus an index (settori.html)."""
+    e = html.escape
+    os.makedirs(os.path.join(outdir, "settore"), exist_ok=True)
+    live = open_notices(notices, now)
+    links = []
+    for d in sorted(CPV_DIVISIONS):
+        label = CPV_DIVISIONS[d]
+        items = [n for n in live if d in divisions(n)]
+        links.append(f'<li><a href="settore/{d}.html">{e(label)}</a> <span class="small">CPV {d} · {len(items)} {"aperto" if len(items) == 1 else "aperti"}</span></li>')
+        body = f"""{layout.crumbs([("settori.html", "Settori"), ("", f"CPV {d}")], 1)}
+<h1>Bandi aperti: {e(label)}</h1>
+<p class="lead">{len(items)} avvisi con almeno un lotto nella divisione CPV {d}, con scadenza non ancora passata, dalla scadenza più vicina. Aggiornato il {stamp(now)}.</p>
+<div class="actions"><a class="pill" href="../feed/settore-{d}.xml"><span aria-hidden="true">📡</span> Feed del settore</a>
+<a class="pill" href="../cerca.html#c={d}"><span aria-hidden="true">🔎</span> Cerca nel settore, per regione o parola</a>
+<a class="pill" href="../feed/su-misura.php?c={d}">Feed su misura (aggiungi regione o parola)</a>
+<a class="pill" href="../come-ricevere.html">Come si usano?</a></div>
+<p class="small">Il settore viene dal codice CPV che la stazione appaltante indica per ciascun lotto: se un bando è classificato male alla fonte, qui finisce nel settore sbagliato. Etichette CPV: Ufficio delle pubblicazioni dell'UE.</p>
+{items_html(items)}"""
+        emit_page(outdir, f"settore/{d}.html", f"Bandi aperti: {label} (CPV {d}) · ossian.cloud",
+                  f"Bandi di gara e avvisi ancora aperti nel settore {short(label, 90)} (divisione CPV {d}), dalla scadenza "
+                  "più vicina, con feed. Estratto non ufficiale dalla piattaforma ANAC.",
+                  body, "", 1,
+                  f'\n<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · CPV {d}" href="../feed/settore-{d}.xml">')
+    body = f"""{layout.crumbs([("", "Settori")])}
+<h1>Bandi aperti per settore</h1>
+<p class="lead">Una pagina per ogni divisione del <a href="https://op.europa.eu/it/web/eu-vocabularies/cpv">Vocabolario comune per gli appalti</a> (CPV),
+con i bandi ancora aperti dalla scadenza più vicina e il feed del settore. Aggiornato il {stamp(now)}.</p>
+<ul class="items">
+{chr(10).join(links)}
+</ul>"""
+    emit_page(outdir, "settori.html", "Bandi aperti per settore (CPV) · ossian.cloud",
+              "Bandi di gara ancora aperti per settore: una pagina per ciascuna delle divisioni CPV, con feed. "
+              "Estratto non ufficiale dalla piattaforma ANAC.", body)
 
 
 def write_region_pages(outdir, notices, now, provinces):
@@ -507,6 +551,7 @@ Nessuna iscrizione.</p>
 <h2 id="settore">Per il tuo mestiere</h2>
 <div class="actions">
 <a class="pill" href="feed.html#soa">Imprese edili: feed per categoria SOA</a>
+<a class="pill" href="settori.html">Bandi aperti per settore</a>
 <a class="pill" href="feed.html#settore">Feed per settore (CPV)</a>
 <a class="pill" href="cerca.html#q=manutenzione+verde">Esempio: manutenzione verde</a>
 <a class="pill" href="cerca.html#c=72">Esempio: servizi informatici</a>
