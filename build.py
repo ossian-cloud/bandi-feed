@@ -235,7 +235,7 @@ def open_notices(notices, now):
     return out
 
 
-GRACE_DAYS = 14  # a notice's page stays up (noindex) this long after its deadline
+GRACE_DAYS = 1  # a notice's page stays up (noindex) this long after its deadline; the hosting caps the file count
 
 
 def latest_per_procedure(notices):
@@ -825,7 +825,7 @@ La piattaforma è consultabile, ma non offre feed né avvisi. Questo sito li ric
 <ul>
 <li>Bandi di gara, avvisi di preinformazione indittivi, indagini di mercato ed elenchi di operatori economici: le occasioni ancora aperte a cui un'impresa può partecipare. Esiti e affidamenti diretti non sono inclusi.</li>
 <li>Per ogni avviso: oggetto, ente, procedura, scadenza, valore stimato, luogo, lotti con CIG e categoria, link all'avviso ANAC e ai documenti di gara.</li>
-<li>Ogni procedura ancora aperta ha una sua pagina, con tutti questi dati e i link a bandi simili. La pagina resta {GRACE_DAYS} giorni dopo la scadenza (senza indicizzazione) e poi viene tolta. Se una rettifica corregge un avviso, la pagina mostra la rettifica.</li>
+<li>Ogni procedura ancora aperta ha una sua pagina, con tutti questi dati e i link a bandi simili. Dopo la scadenza la pagina resta circa un giorno (senza indicizzazione) e poi viene tolta. Se una rettifica corregge un avviso, la pagina mostra la rettifica.</li>
 <li>Gli avvisi degli ultimi 30 giorni (massimo {MAX_ENTRIES} per feed). Nessun archivio storico.</li>
 <li>La regione e la provincia sono ricavate dal comune di esecuzione indicato nell'avviso (elenco comuni ISTAT). Un avviso con lotti in più zone compare in ciascuna.</li>
 <li>Aggiornamento automatico ogni 4 ore circa.</li>
