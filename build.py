@@ -353,7 +353,7 @@ def write_notice_pages(outdir, notices, now):
         extra = '\n<meta name="robots" content="noindex">' if annulled or expired else ""
         shards.setdefault(n["id"][0], {})[n["id"]] = layout.page(title, desc, body, "", 1, extra, "", SOURCE, DISCLAIMER)
         if not extra:
-            indexable.append(n["id"])
+            indexable.append((n["id"], n["pubblicato"]))
     # The hosting refuses new files past ~3,100 (2026-10-08), so the pages live in 16 gzipped JSON shards
     # and avviso/page.php serves avviso/<id>.html from them (rewrite in avviso/.htaccess). URLs are unchanged.
     os.makedirs(os.path.join(outdir, "avviso", "data"), exist_ok=True)
@@ -486,8 +486,10 @@ def write_sitemap(outdir, now, notice_ids=()):
                                           if f.endswith(".html"))
     pages += sorted(f"provincia/{f}" for f in os.listdir(os.path.join(outdir, "provincia")) if f.endswith(".html"))
     pages += ["settori.html"] + sorted(f"settore/{f}" for f in os.listdir(os.path.join(outdir, "settore")) if f.endswith(".html"))
-    pages += [f"avviso/{i}.html" for i in notice_ids]
     urls = "".join(f"<url><loc>{BASE}/{p}</loc><lastmod>{now}</lastmod></url>\n" for p in pages)
+    # A notice page changes only when its notice does: give it the publication time, not the build time.
+    urls += "".join(f"<url><loc>{BASE}/avviso/{i}.html</loc>" + (f"<lastmod>{t}</lastmod>" if t else "") + "</url>\n"
+                    for i, t in notice_ids)
     with open(os.path.join(outdir, "sitemap.xml"), "w") as f:
         f.write('<?xml version="1.0" encoding="UTF-8"?>\n'
                 '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + urls + "</urlset>\n")
