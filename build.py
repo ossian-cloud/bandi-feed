@@ -16,6 +16,7 @@ import unicodedata
 
 import geo
 import layout
+import titles
 from atom import entry_xml, write_feed
 from ics import write_calendar
 
@@ -72,6 +73,25 @@ def load_cpv():
 
 
 CPV_CODE, CPV_DIVISIONS = load_cpv()
+# Plain names for titles and descriptions; the full CPV label stays in the H1. People search "bandi pulizie", not CPV 90.
+SECTOR_SHORT = {
+    "03": "agricoltura, pesca e foreste", "09": "carburanti ed energia", "14": "minerali e metalli",
+    "15": "alimenti e bevande", "16": "macchine agricole", "18": "abbigliamento e calzature",
+    "19": "tessuti, plastica e gomma", "22": "stampati", "24": "prodotti chimici",
+    "30": "computer e macchine per ufficio", "31": "materiale elettrico e illuminazione",
+    "32": "radio, TV e telecomunicazioni", "33": "dispositivi medici e farmaci", "34": "veicoli e mezzi di trasporto",
+    "35": "sicurezza, antincendio e difesa", "37": "sport, giochi e strumenti musicali",
+    "38": "strumenti da laboratorio", "39": "mobili, arredi e prodotti per pulizie", "41": "acqua",
+    "42": "macchinari industriali", "43": "macchine da cantiere", "44": "materiali da costruzione",
+    "45": "lavori edili e stradali", "48": "software", "50": "manutenzione e riparazione",
+    "51": "installazione di impianti", "55": "ristorazione, mense e alberghi", "60": "trasporto e noleggio con autista",
+    "63": "servizi ai trasporti e viaggi", "64": "poste e telecomunicazioni", "65": "servizi pubblici (acqua, gas, energia)",
+    "66": "assicurazioni e servizi finanziari", "70": "servizi immobiliari", "71": "architettura e ingegneria",
+    "72": "servizi informatici", "73": "ricerca e sviluppo", "75": "servizi della pubblica amministrazione",
+    "76": "servizi per petrolio e gas", "77": "verde, giardinaggio e agricoltura", "79": "servizi alle imprese",
+    "80": "istruzione e formazione", "85": "sanità e servizi sociali", "90": "pulizie, rifiuti e ambiente",
+    "92": "cultura, sport e tempo libero", "98": "altri servizi alla persona",
+}
 
 
 def cpv_text(label):
@@ -293,7 +313,7 @@ def write_notice_pages(outdir, notices, now):
             status = f'<p class="note"><b>Scaduto</b> il {when(n["scadenza"])}. La pagina resta per qualche giorno e poi viene tolta.</p>'
         else:
             status = ""
-        rows = [("Oggetto", n["oggetto"] if len(n["oggetto"] or "") > 180 else None), ("Tipo", n["tipo_label"] + (" (rettifica di un avviso precedente)" if n["rettifica"] else "")),
+        rows = [("Oggetto", n["oggetto"] if len(n["oggetto"] or "") > 250 else None), ("Tipo", n["tipo_label"] + (" (rettifica di un avviso precedente)" if n["rettifica"] else "")),
                 ("Ente", ente), ("Procedura", n["procedura"]),
                 ("Pubblicato", when(n["pubblicato"]) if n["pubblicato"] else None),
                 ("Scadenza", when(n["scadenza"]) if n["scadenza"] else "non indicata"),
@@ -335,7 +355,7 @@ def write_notice_pages(outdir, notices, now):
         elif len(regs) == 1:
             crumb = [(f"regione/{slug(regs[0])}.html", regs[0])] + crumb
         body = f"""{layout.crumbs(crumb, 1)}
-<h1 class="long">{e(short(n["oggetto"] or "Avviso senza oggetto", 180))}</h1>
+<h1 class="long">{e(titles.cut(titles.sentence_case(" ".join(n["oggetto"].split())), 250) if n["oggetto"] else "Avviso senza oggetto")}</h1>
 <p class="lead">{e(n["tipo_label"])} di {e(ente)}{f" · scadenza {when(n['scadenza'])}" if n["scadenza"] and not expired else ""}</p>
 {status}
 <div class="cta">{" ".join(links)}</div>
@@ -346,12 +366,18 @@ def write_notice_pages(outdir, notices, now):
 {follow_html}
 <p class="small">Estratto non ufficiale preparato da un agente AI: i dati possono essere in ritardo o sbagliati. Prima di partecipare controlla sempre l'avviso ufficiale e i documenti di gara.</p>"""
         place = places[0] if len(places) == 1 else (regs[0] if len(regs) == 1 else "")
-        title = f"{short(n['oggetto'] or 'Avviso', 90)} · {short(ente, 60)} · ossian.cloud"
-        desc = (f"{n['tipo_label']} di {short(ente, 80)}" + (f", {place}" if place else "")
-                + (f", scadenza {day(n['scadenza'])}" if n["scadenza"] else "")
-                + (f", valore stimato {euro(total)}" if total else "") + ". Estratto non ufficiale dalla piattaforma ANAC.")
+        place = titles.name_case(place.upper()) if place in places else place
+        title = titles.notice_title(n["oggetto"] or "Avviso", ente, place)
+        cigs = [l["cig"] for l in lots if l["cig"]]
+        who = titles.short_ente(ente)
+        obj = titles.cut(titles.sentence_case(titles.core_object(n["oggetto"] or "", ente)), 70)
+        desc = (f"{n['tipo_label']} di {who}" + (f", {place}" if place and place.lower() not in who.lower() else "") + ": "
+                + obj + ("" if obj.endswith(("…", ".")) else ".")
+                + (f" Scadenza {day(n['scadenza'])}." if n["scadenza"] else "")
+                + (f" CIG {cigs[0]}" + (f" (+{len(cigs) - 1} lotti)" if len(cigs) > 1 else "") + "." if cigs else ""))
         extra = '\n<meta name="robots" content="noindex">' if annulled or expired else ""
-        shards.setdefault(n["id"][0], {})[n["id"]] = layout.page(title, desc, body, "", 1, extra, "", SOURCE, DISCLAIMER)
+        shards.setdefault(n["id"][0], {})[n["id"]] = layout.page(title, desc, body, "", 1, extra, "", SOURCE, DISCLAIMER,
+                                                                       canonical(f"avviso/{n['id']}.html"))
         if not extra:
             indexable.append((n["id"], n["pubblicato"]))
     # The hosting refuses new files past ~3,100 (2026-10-08), so the pages live in 16 gzipped JSON shards
@@ -534,9 +560,20 @@ def webcal(path):
     return f'{BASE.replace("https:", "webcal:")}/{path}'
 
 
+def canonical(rel):
+    """Absolute URL of a page from its path under BASE; index.html is served as the directory."""
+    return f"{BASE}/{rel[:-len('index.html')] if rel.endswith('index.html') else rel}"
+
+
+def canonical(rel):
+    """Absolute URL of a page from its path under BASE; index.html is served as the directory."""
+    return f"{BASE}/{rel[:-len('index.html')] if rel.endswith('index.html') else rel}"
+
+
 def emit_page(outdir, rel, title, description, body, active="", depth=0, extra_head="", before_main=""):
     layout.write(os.path.join(outdir, rel),
-                 layout.page(title, description, body, active, depth, extra_head, before_main, SOURCE, DISCLAIMER))
+                 layout.page(title, description, body, active, depth, extra_head, before_main, SOURCE, DISCLAIMER,
+                             canonical(rel)))
 
 
 def write_province_pages(outdir, notices, now, provinces):
@@ -557,9 +594,9 @@ def write_province_pages(outdir, notices, now, provinces):
 <a class="pill" href="../cerca.html#{q}"><span aria-hidden="true">🔎</span> Cerca in {e(name)}</a>
 <a class="pill" href="../come-ricevere.html">Come si usano?</a></div>
 {items_html(items)}"""
-            emit_page(outdir, f"provincia/{s}.html", f"Bandi aperti in {name} · ossian.cloud",
-                      f"Bandi di gara e avvisi ancora aperti in {name} ({reg}), dalla scadenza più vicina, con feed e "
-                      "calendario delle scadenze. Estratto non ufficiale dalla piattaforma ANAC.",
+            emit_page(outdir, f"provincia/{s}.html", f"Bandi di gara in {name}: {len(items)} aperti",
+                      f"Bandi di gara aperti in {name} ({reg}), dalla scadenza più vicina, con feed e calendario "
+                      "delle scadenze. Dati ANAC aggiornati ogni 4 ore.",
                       body, "zone.html", 1,
                       f'\n<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · {e(pv)}" href="../feed/prov-{s}.xml">')
 
@@ -583,9 +620,9 @@ def write_sector_pages(outdir, notices, now):
 <a class="pill" href="../come-ricevere.html">Come si usano?</a></div>
 <p class="small">Il settore viene dal codice CPV che la stazione appaltante indica per ciascun lotto: se un bando è classificato male alla fonte, qui finisce nel settore sbagliato. Etichette CPV: Ufficio delle pubblicazioni dell'UE.</p>
 {items_html(items)}"""
-        emit_page(outdir, f"settore/{d}.html", f"Bandi aperti: {label} (CPV {d}) · ossian.cloud",
-                  f"Bandi di gara e avvisi ancora aperti nel settore {short(label, 90)} (divisione CPV {d}), dalla scadenza "
-                  "più vicina, con feed. Estratto non ufficiale dalla piattaforma ANAC.",
+        emit_page(outdir, f"settore/{d}.html", f"Bandi {SECTOR_SHORT[d]}: {len(items)} aperti (CPV {d})",
+                  f"Bandi di gara aperti per {SECTOR_SHORT[d]} (CPV {d}) in tutta Italia, dalla scadenza più vicina, "
+                  "con feed. Dati ANAC aggiornati ogni 4 ore.",
                   body, "", 1,
                   f'\n<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · CPV {d}" href="../feed/settore-{d}.xml">')
     body = f"""{layout.crumbs([("", "Settori")])}
@@ -629,9 +666,9 @@ def write_region_pages(outdir, notices, now, provinces):
 <a class="pill" href="../come-ricevere.html">Come si usano?</a></div>
 {('<nav class="panel" aria-label="Province"><b>Vai alla provincia:</b><div class="actions">' + "".join(jump) + "</div></nav>") if len(jump) > 1 else ""}
 {chr(10).join(blocks) or "<p>Nessun avviso aperto al momento.</p>"}"""
-        emit_page(outdir, f"regione/{s}.html", f"Bandi aperti in {reg} · ossian.cloud",
-                  f"Bandi di gara e avvisi ancora aperti in {reg}, per provincia e per scadenza. "
-                  "Estratto non ufficiale dalla piattaforma ANAC.", body, "zone.html", 1,
+        emit_page(outdir, f"regione/{s}.html", f"Bandi di gara in {reg}: {total} aperti",
+                  f"Bandi di gara aperti in {reg}, per provincia e per scadenza, con feed e calendari. "
+                  "Dati ANAC aggiornati ogni 4 ore.", body, "zone.html", 1,
                   f'\n<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · {e(reg)}" href="../feed/{s}.xml">')
 
 
@@ -708,9 +745,9 @@ in ritardo o sbagliati: prima di partecipare a una gara controlla sempre l'avvis
               + (f" · scade {day(n['scadenza'])}" if n["scadenza"] else "") + "</small></li>" for n in notices[:8])}
 </ul>
 <p><a href="feed/tutti.xml">Feed di tutta Italia</a> · <a href="cerca.html">tutti i bandi aperti</a></p>"""
-    emit_page(outdir, "index.html", "Bandi pubblici: feed, calendari e ricerca dei bandi di gara · ossian.cloud",
-              "Feed, calendari delle scadenze e ricerca gratuiti dei bandi di gara pubblicati sulla piattaforma ANAC "
-              "di pubblicità legale, per regione, provincia, tipo e settore. Nessuna iscrizione.", body, "", 0,
+    emit_page(outdir, "index.html", "Bandi di gara aperti: feed, calendari e ricerca gratuiti",
+              "Bandi di gara pubblicati su ANAC: ricerca, feed e calendari delle scadenze gratuiti, per regione, "
+              "provincia e settore. Nessuna iscrizione.", body, "", 0,
               '\n<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · Tutta Italia" href="feed/tutti.xml">'
               f'\n<meta property="og:image" content="https://ossian.cloud/img/bandi-cerca.png">', hero)
 

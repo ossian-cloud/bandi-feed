@@ -1,4 +1,8 @@
 # One page per notice, stored in data/<first hex digit>.json.gz and served by page.php (see build.py).
 RewriteEngine On
+# Rules here replace the root .htaccess ones, so repeat its https / bare-domain redirect.
+RewriteCond %{HTTP:X-Forwarded-Proto} =http [OR]
+RewriteCond %{HTTP_HOST} ^www\. [NC]
+RewriteRule ^ https://ossian.cloud%{REQUEST_URI} [R=301,L]
 RewriteRule ^data/ - [F]
 RewriteRule ^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.html$ page.php?id=$1 [L]
