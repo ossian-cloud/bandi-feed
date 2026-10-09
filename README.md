@@ -21,8 +21,11 @@ connection with ANAC.
   list of Italian municipalities.
 - `build.py` writes one feed for all of Italy, one per type of contract, one per region and one per
   region and type, one per province, one per SOA category and one per CPV division (sector), plus an HTML index page and one page
-  per region and per province of open notices by deadline. Every entry links to the official
-  notice and carries the source and licence.
+  per region, per province, per sector and per sector in each region (from 3 open notices; indexed from 5)
+  of open notices by deadline. Every entry links to the official notice and carries the source and licence.
+- `titles.py` makes page titles readable: it drops the procedural boilerplate in front of the real object
+  ("Procedura aperta ai sensi dell'art. 71 ... per l'affidamento del") and fixes ALL-CAPS text. It only
+  removes and re-cases the official words, never adds any; the page heading keeps the full object.
 - It also writes one iCalendar file per region and per province (`calendario/*.ics`): an event at the
   deadline of each open notice, one per procedure (the most recent notice wins, so a rettifica that
   moves the deadline moves the event). Subscribe from Google Calendar, Outlook, Apple Calendar or Thunderbird.
