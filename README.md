@@ -36,6 +36,9 @@ connection with ANAC.
   `static/su-misura.php`, which serves a feed for any combination of the search filters
   (`?r=Regione&p=Provincia&n=Servizi&c=72&q=parole&v=100000`). It reads only the query string and stores nothing.
   The search page links to the feed of the current search.
+- One page per open procedure (and closed ones for 14 days, `noindex`) at `avviso/<id>.html`. The hosting caps
+  the number of files, so the pages are stored in 16 gzipped JSON shards (`avviso/data/<hex>.json.gz`) and served
+  by `static/avviso/page.php` through a rewrite in `static/avviso/.htaccess` (Apache). URLs look like static files.
 - `atom.py` and `ics.py` are minimal Atom 1.0 and iCalendar writers (stdlib only).
 
 Python 3.10+, no dependencies.
