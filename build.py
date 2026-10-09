@@ -3,6 +3,7 @@
 Usage: python3 build.py OUTDIR   (e.g. ../../site/bandi)
 """
 import datetime as dt
+import gzip
 import html
 import json
 import os
@@ -235,7 +236,7 @@ def open_notices(notices, now):
     return out
 
 
-GRACE_DAYS = 1  # a notice's page stays up (noindex) this long after its deadline; the hosting caps the file count
+GRACE_DAYS = 14  # a notice's page stays up (noindex) this long after its deadline
 
 
 def latest_per_procedure(notices):
@@ -275,7 +276,7 @@ def write_notice_pages(outdir, notices, now):
     pages = paged_notices(notices, now)
     PAGED.clear()
     PAGED.update(n["id"] for n in pages)
-    indexable = []
+    indexable, shards = [], {}
     for n in pages:
         lots = n["lotti"]
         annulled = bool(lots) and all(l["annullato"] for l in lots)
@@ -350,9 +351,23 @@ def write_notice_pages(outdir, notices, now):
                 + (f", scadenza {day(n['scadenza'])}" if n["scadenza"] else "")
                 + (f", valore stimato {euro(total)}" if total else "") + ". Estratto non ufficiale dalla piattaforma ANAC.")
         extra = '\n<meta name="robots" content="noindex">' if annulled or expired else ""
-        emit_page(outdir, f"avviso/{n['id']}.html", title, desc, body, "", 1, extra)
+        shards.setdefault(n["id"][0], {})[n["id"]] = layout.page(title, desc, body, "", 1, extra, "", SOURCE, DISCLAIMER)
         if not extra:
             indexable.append(n["id"])
+    # The hosting refuses new files past ~3,100 (2026-10-08), so the pages live in 16 gzipped JSON shards
+    # and avviso/page.php serves avviso/<id>.html from them (rewrite in avviso/.htaccess). URLs are unchanged.
+    os.makedirs(os.path.join(outdir, "avviso", "data"), exist_ok=True)
+    for c, pages_of in shards.items():
+        with open(os.path.join(outdir, "avviso", "data", f"{c}.json.gz"), "wb") as f:
+            f.write(gzip.compress(json.dumps(pages_of, ensure_ascii=False, separators=(",", ":")).encode(), 9, mtime=0))
+    layout.write(os.path.join(outdir, "avviso", "data", "404.html"), layout.page(
+        "Avviso non più disponibile · ossian.cloud", "Questo avviso non è più tra quelli aperti.",
+        '<h1>Avviso non più disponibile</h1>\n<p class="lead">La pagina di un avviso resta online finché la procedura è aperta '
+        'e viene tolta poco dopo la scadenza. Cerca l\'avviso sulla <a href="https://pubblicitalegale.anticorruzione.it/">'
+        'piattaforma ANAC</a> o guarda i <a href="../cerca.html">bandi ancora aperti</a>.</p>',
+        "", 1, '\n<meta name="robots" content="noindex">', "", SOURCE, DISCLAIMER))
+    for f in ("page.php", ".htaccess"):
+        shutil.copy(os.path.join(HERE, "static", "avviso", f), os.path.join(outdir, "avviso", f))
     return indexable
 
 
@@ -825,7 +840,7 @@ La piattaforma è consultabile, ma non offre feed né avvisi. Questo sito li ric
 <ul>
 <li>Bandi di gara, avvisi di preinformazione indittivi, indagini di mercato ed elenchi di operatori economici: le occasioni ancora aperte a cui un'impresa può partecipare. Esiti e affidamenti diretti non sono inclusi.</li>
 <li>Per ogni avviso: oggetto, ente, procedura, scadenza, valore stimato, luogo, lotti con CIG e categoria, link all'avviso ANAC e ai documenti di gara.</li>
-<li>Ogni procedura ancora aperta ha una sua pagina, con tutti questi dati e i link a bandi simili. Dopo la scadenza la pagina resta circa un giorno (senza indicizzazione) e poi viene tolta. Se una rettifica corregge un avviso, la pagina mostra la rettifica.</li>
+<li>Ogni procedura ancora aperta ha una sua pagina, con tutti questi dati e i link a bandi simili. La pagina resta {GRACE_DAYS} giorni dopo la scadenza (senza indicizzazione) e poi viene tolta. Se una rettifica corregge un avviso, la pagina mostra la rettifica.</li>
 <li>Gli avvisi degli ultimi 30 giorni (massimo {MAX_ENTRIES} per feed). Nessun archivio storico.</li>
 <li>La regione e la provincia sono ricavate dal comune di esecuzione indicato nell'avviso (elenco comuni ISTAT). Un avviso con lotti in più zone compare in ciascuna.</li>
 <li>Aggiornamento automatico ogni 4 ore circa.</li>

@@ -1,0 +1,4 @@
+# One page per notice, stored in data/<first hex digit>.json.gz and served by page.php (see build.py).
+RewriteEngine On
+RewriteRule ^data/ - [F]
+RewriteRule ^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.html$ page.php?id=$1 [L]
