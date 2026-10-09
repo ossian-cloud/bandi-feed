@@ -35,6 +35,8 @@ def sentence_case(s):
         keep = (any(c.isdigit() for c in core) and any(c.isalpha() for c in core)) or re.fullmatch(r"([A-Z]\.){2,}[A-Z]?\.?", core)
         out.append(w if keep else w.lower())
     s = "".join(out)
+    s = re.sub(r"([.!?]\s+)(\w)", lambda m: m.group(1) + m.group(2).upper(), s)  # a new sentence
+    s = re.sub(r"\(([a-z]{2})\)", lambda m: f"({m.group(1).upper()})", s)  # province codes: (so) -> (SO)
     i = next((i for i, c in enumerate(s) if c.isalpha()), 0)
     return s[:i] + s[i:i + 1].upper() + s[i + 1:]
 

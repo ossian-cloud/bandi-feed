@@ -231,13 +231,13 @@ def main(outdir):
     indexable = write_notice_pages(outdir, notices, now)
     write_region_pages(outdir, notices, now, provinces)
     write_province_pages(outdir, notices, now, provinces)
-    write_sector_pages(outdir, notices, now)
+    combos = write_sector_pages(outdir, notices, now)
     write_calendars(outdir, notices, now, provinces)
     write_search(outdir, notices, now)
     write_custom(outdir, notices, now)
     ncal = len([f for f in os.listdir(os.path.join(outdir, "calendario")) if f.endswith(".ics")])
     write_pages(outdir, notices, now, provinces, [(c, labels[c], soa_counts[c]) for c in soa], sector_counts, len(feeds), ncal)
-    write_sitemap(outdir, now, indexable)
+    write_sitemap(outdir, now, indexable, combos)
     json.dump({"updated": now, "notices": len(notices), "feeds": feeds},
               open(os.path.join(outdir, "feeds.json"), "w"), ensure_ascii=False, indent=1)
     print(f"{len(feeds)} feeds, {len(notices)} notices", file=sys.stderr)
@@ -506,12 +506,13 @@ def write_custom(outdir, notices, now):
     shutil.copy(os.path.join(HERE, "static", "su-misura.php"), os.path.join(outdir, "feed", "su-misura.php"))
 
 
-def write_sitemap(outdir, now, notice_ids=()):
+def write_sitemap(outdir, now, notice_ids=(), combos=()):
     """sitemap.xml for the HTML pages only (feeds and calendars are for readers, not search engines)."""
     pages = ["", "cerca.html", "zone.html", "feed.html", "calendari.html", "come-ricevere.html", "info.html"] + sorted(f"regione/{f}" for f in os.listdir(os.path.join(outdir, "regione"))
                                           if f.endswith(".html"))
     pages += sorted(f"provincia/{f}" for f in os.listdir(os.path.join(outdir, "provincia")) if f.endswith(".html"))
-    pages += ["settori.html"] + sorted(f"settore/{f}" for f in os.listdir(os.path.join(outdir, "settore")) if f.endswith(".html"))
+    pages += ["settori.html"] + sorted(f"settore/{f}" for f in os.listdir(os.path.join(outdir, "settore")) if re.fullmatch(r"\d\d\.html", f))
+    pages += sorted(combos)  # sector-in-region pages; those with few notices are noindex and stay out
     urls = "".join(f"<url><loc>{BASE}/{p}</loc><lastmod>{now}</lastmod></url>\n" for p in pages)
     # A notice page changes only when its notice does: give it the publication time, not the build time.
     urls += "".join(f"<url><loc>{BASE}/avviso/{i}.html</loc>" + (f"<lastmod>{t}</lastmod>" if t else "") + "</url>\n"
@@ -532,7 +533,7 @@ def notice_items(items, limit=None):
         meta = [("scade " + day(n["scadenza"])) if n["scadenza"] else "senza scadenza indicata",
                 "; ".join(x["nome"] or "" for x in n["ente"]), n["tipo_label"], nat,
                 euro(total) if total else None]
-        lis.append(f'<li><a href="{e(href(n, 1))}">{e(short(n["oggetto"], 180))}</a>'
+        lis.append(f'<li><a href="{e(href(n, 1))}">{e(titles.cut(titles.sentence_case(" ".join((n["oggetto"] or "").split())), 180))}</a>'
                    + (' <span class="tag">rettifica</span>' if n["rettifica"] else "")
                    + f'<small>{e(" · ".join(m for m in meta if m))}</small></li>')
     return lis
@@ -601,12 +602,52 @@ def write_province_pages(outdir, notices, now, provinces):
                       f'\n<link rel="alternate" type="application/atom+xml" title="Bandi pubblici · {e(pv)}" href="../feed/prov-{s}.xml">')
 
 
+COMBO_MIN, COMBO_INDEX = 3, 5  # a sector-in-region page from 3 open notices, indexed from 5 (so it doesn't flicker)
+
+
+def region_sectors(live):
+    """{(region, division): open notices} for the pairs that get their own page (settore/<dd>-<region>.html)."""
+    pairs = {}
+    for n in live:
+        for r in {l["regione"] for l in n["lotti"] if l["regione"]}:
+            for d in divisions(n):
+                pairs.setdefault((r, d), []).append(n)
+    return {k: v for k, v in pairs.items() if len(v) >= COMBO_MIN}
+
+
 def write_sector_pages(outdir, notices, now):
-    """One HTML page per CPV division with its open notices, plus an index (settori.html)."""
+    """One HTML page per CPV division with its open notices, plus an index (settori.html), plus one page per
+    division and region with enough notices: people search for "bandi pulizie Lombardia", not for CPV 90.
+    Returns the indexable sector-in-region pages, for the sitemap."""
     e = html.escape
     os.makedirs(os.path.join(outdir, "settore"), exist_ok=True)
     live = open_notices(notices, now)
+    pairs = region_sectors(live)
+    indexable = []
+    for (reg, d), items in sorted(pairs.items()):
+        q = e(urllib.parse.urlencode({"r": reg, "c": d}))
+        body = f"""{layout.crumbs([("settori.html", "Settori"), (f"settore/{d}.html", f"CPV {d}"), ("", reg)], 1)}
+<h1>Bandi {e(SECTOR_SHORT[d])} in {e(reg)}</h1>
+<p class="lead">{len(items)} avvisi aperti in {e(reg)} con almeno un lotto nella divisione CPV {d} ({e(CPV_DIVISIONS[d])}), dalla scadenza più vicina. Aggiornato il {stamp(now)}.</p>
+<div class="actions"><a class="pill" href="../feed/su-misura.php?{q}"><span aria-hidden="true">📡</span> Feed di questi bandi</a>
+<a class="pill" href="../cerca.html#{q}"><span aria-hidden="true">🔎</span> Cerca per provincia o parola</a>
+<a class="pill" href="../regione/{slug(reg)}.html">Tutti i bandi in {e(reg)}</a>
+<a class="pill" href="{d}.html">Il settore in tutta Italia</a></div>
+{items_html(items)}"""
+        rel = f"settore/{d}-{slug(reg)}.html"
+        if len(items) >= COMBO_INDEX:
+            indexable.append(rel)
+        emit_page(outdir, rel, f"Bandi {SECTOR_SHORT[d]} in {reg}: {len(items)} aperti",
+                  f"Bandi di gara aperti in {reg} per {SECTOR_SHORT[d]} (CPV {d}), dalla scadenza più vicina, con un feed "
+                  "su misura. Dati ANAC aggiornati ogni 4 ore.", body, "", 1,
+                  "" if len(items) >= COMBO_INDEX else '\n<meta name="robots" content="noindex">')
     links = []
+
+    def by_region(d):
+        regs = sorted((r, len(v)) for (r, dd), v in pairs.items() if dd == d)
+        return ('<nav class="panel" aria-label="Per regione"><b>Per regione:</b><div class="actions">'
+                + "".join(f'<a class="pill" href="{d}-{slug(r)}.html">{e(r)} ({k})</a>' for r, k in regs)
+                + "</div></nav>") if regs else ""
     for d in sorted(CPV_DIVISIONS):
         label = CPV_DIVISIONS[d]
         items = [n for n in live if d in divisions(n)]
@@ -619,6 +660,7 @@ def write_sector_pages(outdir, notices, now):
 <a class="pill" href="../feed/su-misura.php?c={d}">Feed su misura (aggiungi regione o parola)</a>
 <a class="pill" href="../come-ricevere.html">Come si usano?</a></div>
 <p class="small">Il settore viene dal codice CPV che la stazione appaltante indica per ciascun lotto: se un bando è classificato male alla fonte, qui finisce nel settore sbagliato. Etichette CPV: Ufficio delle pubblicazioni dell'UE.</p>
+{by_region(d)}
 {items_html(items)}"""
         emit_page(outdir, f"settore/{d}.html", f"Bandi {SECTOR_SHORT[d]}: {len(items)} aperti (CPV {d})",
                   f"Bandi di gara aperti per {SECTOR_SHORT[d]} (CPV {d}) in tutta Italia, dalla scadenza più vicina, "
@@ -635,6 +677,7 @@ con i bandi ancora aperti dalla scadenza più vicina e il feed del settore. Aggi
     emit_page(outdir, "settori.html", "Bandi aperti per settore (CPV) · ossian.cloud",
               "Bandi di gara ancora aperti per settore: una pagina per ciascuna delle divisioni CPV, con feed. "
               "Estratto non ufficiale dalla piattaforma ANAC.", body)
+    return indexable
 
 
 def write_region_pages(outdir, notices, now, provinces):
@@ -642,6 +685,7 @@ def write_region_pages(outdir, notices, now, provinces):
     e = html.escape
     os.makedirs(os.path.join(outdir, "regione"), exist_ok=True)
     live = open_notices(notices, now)
+    pairs = region_sectors(live)
     for reg in REGIONS:
         blocks, jump, total = [], [], 0
         for pv in provinces.get(reg, []) + [None]:
@@ -665,6 +709,7 @@ def write_region_pages(outdir, notices, now, provinces):
 <a class="pill" href="../cerca.html#r={e(urllib.parse.quote(reg))}"><span aria-hidden="true">🔎</span> Cerca in {e(reg)}</a>
 <a class="pill" href="../come-ricevere.html">Come si usano?</a></div>
 {('<nav class="panel" aria-label="Province"><b>Vai alla provincia:</b><div class="actions">' + "".join(jump) + "</div></nav>") if len(jump) > 1 else ""}
+{('<nav class="panel" aria-label="Settori"><b>Per settore:</b><div class="actions">' + "".join(f'<a class="pill" href="../settore/{d}-{s}.html">{e(SECTOR_SHORT[d])} ({len(v)})</a>' for (r, d), v in sorted(pairs.items()) if r == reg) + "</div></nav>") if any(r == reg for r, _ in pairs) else ""}
 {chr(10).join(blocks) or "<p>Nessun avviso aperto al momento.</p>"}"""
         emit_page(outdir, f"regione/{s}.html", f"Bandi di gara in {reg}: {total} aperti",
                   f"Bandi di gara aperti in {reg}, per provincia e per scadenza, con feed e calendari. "
@@ -741,7 +786,7 @@ in ritardo o sbagliati: prima di partecipare a una gara controlla sempre l'avvis
 
 <h2>Ultimi avvisi pubblicati</h2>
 <ul class="items">
-{chr(10).join(f'<li><a href="{e(href(n))}">{e(short(n["oggetto"], 160))}</a><small>{e("; ".join(x["nome"] or "" for x in n["ente"]))} · {e(n["tipo_label"])}'
+{chr(10).join(f'<li><a href="{e(href(n))}">{e(titles.cut(titles.sentence_case(" ".join((n["oggetto"] or "").split())), 160))}</a><small>{e("; ".join(x["nome"] or "" for x in n["ente"]))} · {e(n["tipo_label"])}'
               + (f" · scade {day(n['scadenza'])}" if n["scadenza"] else "") + "</small></li>" for n in notices[:8])}
 </ul>
 <p><a href="feed/tutti.xml">Feed di tutta Italia</a> · <a href="cerca.html">tutti i bandi aperti</a></p>"""
