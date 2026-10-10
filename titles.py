@@ -68,6 +68,7 @@ def upperish(s):
 
 def sentence_case(s):
     """Lower-case a shouting text, keeping things that look like codes or acronyms with dots (S.P.A., D.LGS.)."""
+    s = accents(s)
     if not upperish(s):
         return s[:1].upper() + s[1:]
     out = []
@@ -84,6 +85,7 @@ def sentence_case(s):
 
 def name_case(s):
     """'COMUNE DI SAN GREGORIO MAGNO' -> 'Comune di San Gregorio Magno'; mixed-case names are left alone."""
+    s = accents(s)
     if not upperish(s):
         return s
     words = re.split(r"(\s+|-|/|['’])", s)
@@ -159,3 +161,16 @@ def notice_title(oggetto, ente, place="", limit=78):
     obj = sentence_case(core_object(oggetto, ente))
     room = max(40, limit - len(who) - 3)
     return f"{cut(obj, room)} - {who}"
+
+
+_ACC = {"a": "à", "e": "è", "i": "ì", "o": "ò", "u": "ù"}
+
+
+def accents(s):
+    """Shouting sources write accents as apostrophes: 'UNIVERSITA'' -> 'UNIVERSITÀ', 'PERCHE'' -> 'PERCHÉ'.
+    Only on words of 3+ letters ending in a vowel and an apostrophe, so 'po'' and elisions (DELL') are left alone."""
+    def fix(m):
+        w, v = m.group(1), m.group(2)
+        a = "é" if v.lower() == "e" and w.lower().endswith("ch") else _ACC[v.lower()]
+        return w + (a.upper() if v.isupper() else a)
+    return re.sub(r"\b([A-Za-z]{2,})([AEIOUaeiou])['’`](?=[\s,.;:)!?/-]|$)", fix, s)

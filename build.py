@@ -478,8 +478,8 @@ def write_search(outdir, notices, now):
 
 
 def fold(s):
-    """Lowercase without accents: what both the search page and su-misura.php compare."""
-    return "".join(c for c in unicodedata.normalize("NFD", (s or "").lower()) if not unicodedata.combining(c))
+    """Lowercase without accents, one kind of apostrophe: what both the search page and su-misura.php compare."""
+    return "".join(c for c in unicodedata.normalize("NFD", (s or "").lower().replace("’", "'").replace("‘", "'")) if not unicodedata.combining(c))
 
 
 def write_custom(outdir, notices, now):

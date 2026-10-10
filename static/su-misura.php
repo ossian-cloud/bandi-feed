@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 const MAX_ENTRIES = 200;
 header_remove('X-Powered-By');
+header('X-Content-Type-Options: nosniff');
 
 function fail(int $code, string $msg): never {
     http_response_code($code);
@@ -16,7 +17,7 @@ function fail(int $code, string $msg): never {
 }
 
 function fold(string $s): string {
-    $s = mb_strtolower($s, 'UTF-8');
+    $s = str_replace(["\u{2018}", "\u{2019}"], "'", mb_strtolower($s, 'UTF-8'));
     if (class_exists('Normalizer')) {
         return preg_replace('/\p{Mn}/u', '', Normalizer::normalize($s, Normalizer::FORM_D));
     }
@@ -44,11 +45,12 @@ if ($v !== '' && !preg_match('/^\d{1,12}([.,]\d*)?$/', $v)) fail(400, 'Importo n
 $file = __DIR__ . '/su-misura.json';
 $mtime = @filemtime($file);
 if ($mtime === false) fail(503, 'Dati non disponibili, riprova più tardi.');
-$etag = '"' . $mtime . '-' . md5(implode("\0", [$r, $p, $n, $c, $q, $v])) . '"';
+$etag = '"' . $mtime . '-' . (int)@filemtime(__FILE__) . '-' . md5(implode("\0", [$r, $p, $n, $c, $q, $v])) . '"';
 header('ETag: ' . $etag);
 header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
 header('Cache-Control: public, max-age=1800');
-if (trim($_SERVER['HTTP_IF_NONE_MATCH'] ?? '') === $etag) { http_response_code(304); exit; }
+$inm = array_map(fn($t) => preg_replace('/^W\//', '', trim($t)), explode(',', $_SERVER['HTTP_IF_NONE_MATCH'] ?? ''));
+if (in_array($etag, $inm, true)) { http_response_code(304); exit; }
 
 $raw = @file_get_contents($file);
 $D = $raw === false ? null : json_decode($raw, true);

@@ -10,7 +10,7 @@
 <meta property="og:image" content="https://ossian.cloud/img/bandi-cerca.png">
 <link rel="canonical" href="https://ossian.cloud/bandi/cerca.html">
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="../style.css?v=3">
+<link rel="stylesheet" href="../style.css?v=4">
 <style>
 form{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:.8rem 1rem;font-size:.92rem;font-weight:600}
 form label{display:flex;flex-direction:column;gap:.25rem}
@@ -51,7 +51,7 @@ Per ricevere i nuovi avvisi senza cercarli usa i <a href="feed.html">feed</a> o 
 const $ = id => document.getElementById(id);
 const PAGE = 100;
 let D, rows = [], shown = 0;
-const norm = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const norm = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\u2018\u2019]/g, "'");
 const euro = v => v.toLocaleString("it-IT", {style: "currency", currency: "EUR", maximumFractionDigits: 0});
 const when = iso => new Date(iso + "Z").toLocaleString("it-IT", {timeZone: "Europe/Rome", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"});
 function opt(sel, values) {
