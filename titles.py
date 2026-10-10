@@ -2,7 +2,11 @@
 open with procedural boilerplate ("Procedura aperta ai sensi dell'art. 71 del D.Lgs. 36/2023 per l'affidamento
 del..."), so what a search result shows is the boilerplate. These helpers only reformat the official text:
 they drop the boilerplate in front of the real object and fix the case. They never add words."""
+import csv
+import os
 import re
+
+REF = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ref")
 
 SMALL = {"di", "del", "della", "dei", "delle", "degli", "dello", "dell", "e", "ed", "per", "a", "al", "alla", "ai",
          "alle", "in", "da", "dal", "con", "su", "sul", "sulla", "nel", "nella", "il", "la", "lo", "le", "gli", "i", "un", "una", "d", "l"}
@@ -20,6 +24,43 @@ TAIL = re.compile(r"\s*[-–—,.(]*\s*\b(CUP|CIG|CUI|CPV)\b\s*[:n.°]*\s*[A-Z0-
 CODE = re.compile(r"^(\(\s*[\w./-]+\s*\)|[A-Za-z]*\d[\w./-]*?|(bando|rda|rdo)\s+n?°?\s*[A-Z]*\d[\w./-]*\.?)[\s_:–-]+(?=\S)", re.I)
 
 
+def _places():
+    """Official spellings of municipalities, provinces and regions (ISTAT), to undo the lower-casing of a shouting
+    object. Multi-word names are distinctive enough to restore anywhere; single words only after a place
+    preposition ("di lugo"), and never the ones that are also common words ("campo di calcio")."""
+    with open(os.path.join(REF, "place-words-excluded.txt"), encoding="utf-8") as f:
+        common = {w.strip() for w in f if w.strip() and not w.startswith("#")}
+    names, regions = set(), set()
+    with open(os.path.join(REF, "comuni.csv"), encoding="latin-1", newline="") as f:
+        rows = csv.reader(f, delimiter=";")
+        next(rows)
+        for r in rows:
+            if len(r) >= 12:
+                names |= {r[6].strip(), r[11].split("/")[0].strip()}
+                regions.add(r[10].split("/")[0].strip())
+    multi, single = {}, {}
+    for n in names | regions:
+        if not n or n.lower() in common:
+            continue
+        distinctive = re.search(r"[\s'’-]", n) or (n in regions and n != "Marche")  # 'marche' is also 'brands'
+        (multi if distinctive else single)[n.lower()] = n
+        if "-" in n:  # 'friuli venezia giulia', 'emilia romagna'
+            multi[n.lower().replace("-", " ")] = n.replace("-", " ")
+    by_len = lambda d: "|".join(re.escape(k) for k in sorted(d, key=len, reverse=True))
+    anywhere = re.compile(rf"(?<![\w'’])({by_len(multi)})(?![\w'’])")
+    after = re.compile(rf"(\b(?:di|a|ad|in|da|comune di|provincia di|regione|citt[àa] di|presso)\s+)({by_len(single)})(?![\w'’])")
+    return multi, single, anywhere, after
+
+
+_MULTI, _SINGLE, _ANYWHERE, _AFTER = _places()
+
+
+def restore_places(s):
+    """'stadio muccinelli di lugo' -> 'stadio muccinelli di Lugo'."""
+    s = _ANYWHERE.sub(lambda m: _MULTI[m.group(1)], s)
+    return _AFTER.sub(lambda m: m.group(1) + _SINGLE[m.group(2)], s)
+
+
 def upperish(s):
     letters = [c for c in s if c.isalpha()]
     return bool(letters) and sum(c.isupper() for c in letters) > 0.6 * len(letters)
@@ -34,7 +75,7 @@ def sentence_case(s):
         core = w.strip("“”\"'’(),;:.")
         keep = (any(c.isdigit() for c in core) and any(c.isalpha() for c in core)) or re.fullmatch(r"([A-Z]\.){2,}[A-Z]?\.?", core)
         out.append(w if keep else w.lower())
-    s = "".join(out)
+    s = restore_places("".join(out))
     s = re.sub(r"([.!?]\s+)(\w)", lambda m: m.group(1) + m.group(2).upper(), s)  # a new sentence
     s = re.sub(r"\(([a-z]{2})\)", lambda m: f"({m.group(1).upper()})", s)  # province codes: (so) -> (SO)
     i = next((i for i, c in enumerate(s) if c.isalpha()), 0)
