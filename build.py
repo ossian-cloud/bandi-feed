@@ -893,7 +893,7 @@ con ente, valore, CIG e il link all'avviso ufficiale. Ti abboni una volta e il c
 
 <h2>Come si aggiunge</h2>
 <div class="cards">
-<div class="card"><h3>Google Calendar</h3><p>Dal computer: <b>Altri calendari → + → Da URL</b>, incolla l'indirizzo del calendario. Poi lo vedi anche sul telefono.</p></div>
+<div class="card"><h3>Google Calendar</h3><p>Dal computer: <b>Altri calendari → + → Da URL</b>, incolla l'indirizzo del calendario. L'app per telefono non ha questa voce: fallo una volta dal computer (o da calendar.google.com nel browser del telefono) e poi lo vedi anche nell'app. Google aggiorna questi calendari con calma: una novità può metterci ore a comparire.</p></div>
 <div class="card"><h3>iPhone e Mac</h3><p>Tocca <b>aggiungi</b> accanto al calendario, oppure Impostazioni → Calendario → Account → Aggiungi account → Altro → Aggiungi calendario sottoscritto.</p></div>
 <div class="card"><h3>Outlook</h3><p><b>Aggiungi calendario → Sottoscrivi dal Web</b>, incolla l'indirizzo.</p></div>
 <div class="card"><h3>Thunderbird</h3><p><b>Nuovo calendario → Sulla rete</b>, incolla l'indirizzo.</p></div>
