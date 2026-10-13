@@ -49,16 +49,26 @@ def _places():
     by_len = lambda d: "|".join(re.escape(k) for k in sorted(d, key=len, reverse=True))
     anywhere = re.compile(rf"(?<![\w'’])({by_len(multi)})(?![\w'’])")
     after = re.compile(rf"(\b(?:di|a|ad|in|da|comune di|provincia di|regione|citt[àa] di|presso)\s+)({by_len(single)})(?![\w'’])")
-    return multi, single, anywhere, after
+    pair = re.compile(rf"(?<![\w'’])({by_len(single)})(\s?[-/]\s?)({by_len(single)})(?![\w'’])")
+    return multi, single, anywhere, after, pair
 
 
-_MULTI, _SINGLE, _ANYWHERE, _AFTER = _places()
+_MULTI, _SINGLE, _ANYWHERE, _AFTER, _PAIR = _places()
 
 
 def restore_places(s):
     """'stadio muccinelli di lugo' -> 'stadio muccinelli di Lugo'."""
     s = _ANYWHERE.sub(lambda m: _MULTI[m.group(1)], s)
-    return _AFTER.sub(lambda m: m.group(1) + _SINGLE[m.group(2)], s)
+    s = _AFTER.sub(lambda m: m.group(1) + _SINGLE[m.group(2)], s)
+    return _PAIR.sub(lambda m: _SINGLE[m.group(1)] + m.group(2) + _SINGLE[m.group(3)], s)  # 'lecce-brindisi', 'roma/latina'
+
+
+# Acronyms that stay upper case in a shouting title (none of them is also an Italian word: not ARPA, the harp in AFAM calls)
+ACRONYMS = {"ASL", "ASP", "AOU", "ASST", "ATS", "AUSL", "ULSS", "IRCCS", "INPS", "INAIL", "ANAS", "RFI", "ATER", "IPAB",
+            "CUC", "SUA", "ARPAL", "ARPAE", "ARPAC", "PNRR", "CIS", "CUP", "CIG", "DPI", "TPL", "ICT", "PON", "POR",
+            "FESR", "FSE", "FSC", "ZES", "ERP", "RSA", "PEBA", "HVAC", "LED", "GPL", "PUMS", "PSR", "CED", "CNR", "ENEA",
+            "INFN", "INAF", "ISS", "ERSU", "ATO", "TARI", "IMU", "CRI", "ZSC", "ZPS", "SPA", "SRL", "SCARL", "UE", "ATI",
+            "RTI", "RUP", "DL", "PEC", "SIT", "NUE", "CSE", "CSP", "PFTE", "UOC", "UOS", "TAC", "RMN", "PET", "CUAF", "SPV", "CIPE", "CIPESS"}
 
 
 def upperish(s):
@@ -74,7 +84,8 @@ def sentence_case(s):
     out = []
     for w in re.split(r"(\s+)", s):
         core = w.strip("“”\"'’(),;:.")
-        keep = (any(c.isdigit() for c in core) and any(c.isalpha() for c in core)) or re.fullmatch(r"([A-Z]\.){2,}[A-Z]?\.?", core)
+        keep = (any(c.isdigit() for c in core) and any(c.isalpha() for c in core)) or re.fullmatch(r"([A-Z]\.){2,}[A-Z]?\.?", core) \
+            or core in ACRONYMS
         out.append(w if keep else w.lower())
     s = restore_places("".join(out))
     s = re.sub(r"([.!?]\s+)(\w)", lambda m: m.group(1) + m.group(2).upper(), s)  # a new sentence
