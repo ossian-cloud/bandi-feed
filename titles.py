@@ -88,6 +88,7 @@ def sentence_case(s):
             or core in ACRONYMS
         out.append(w if keep else w.lower())
     s = restore_places("".join(out))
+    s = re.sub(r"\barpa(?= [A-Z])", "ARPA", s)  # the agency before its region ("ARPA Campania"), not the harp
     s = re.sub(r"([.!?]\s+)(\w)", lambda m: m.group(1) + m.group(2).upper(), s)  # a new sentence
     s = re.sub(r"\(([a-z]{2})\)", lambda m: f"({m.group(1).upper()})", s)  # province codes: (so) -> (SO)
     i = next((i for i, c in enumerate(s) if c.isalpha()), 0)

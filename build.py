@@ -250,15 +250,10 @@ def main(outdir):
 
 def open_notices(notices, now):
     """Notices whose deadline hasn't passed and that aren't fully cancelled, one per procedure (appalto):
-    with notices newest first, a rettifica hides the original it corrects."""
-    seen, out = set(), []
-    for n in notices:
-        if (n["scadenza"] and n["scadenza"][:19] < now[:19]) or all(l["annullato"] for l in n["lotti"]):
-            continue
-        if n["appalto"] not in seen:
-            seen.add(n["appalto"])
-            out.append(n)
-    return out
+    with notices newest first, a rettifica hides the original it corrects, even when the rettifica itself
+    closes or cancels the procedure (so it's deduplicated before filtering)."""
+    return [n for n in latest_per_procedure(notices)
+            if not (n["scadenza"] and n["scadenza"][:19] < now[:19]) and not all(l["annullato"] for l in n["lotti"])]
 
 
 GRACE_DAYS = 14  # a notice's page stays up (noindex) this long after its deadline
