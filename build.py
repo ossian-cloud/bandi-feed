@@ -57,7 +57,12 @@ def euro(v):
 
 
 def day(iso):
-    return iso[8:10] + "/" + iso[5:7] + "/" + iso[0:4] if iso else None
+    """dd/mm/yyyy in Rome time: a deadline at 00:00 Rome is 22:00 or 23:00 UTC of the day before."""
+    if not iso:
+        return None
+    if len(iso) > 10:
+        iso = dt.datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(ROME).isoformat()
+    return iso[8:10] + "/" + iso[5:7] + "/" + iso[0:4]
 
 
 def load_cpv():
@@ -315,7 +320,7 @@ def write_notice_pages(outdir, notices, now):
             status = ""
         rows = [("Oggetto", n["oggetto"] if len(n["oggetto"] or "") > 250 else None), ("Tipo", n["tipo_label"] + (" (rettifica di un avviso precedente)" if n["rettifica"] else "")),
                 ("Ente", ente), ("Procedura", n["procedura"]),
-                ("Pubblicato", when(n["pubblicato"]) if n["pubblicato"] else None),
+                ("Pubblicato", day(n["pubblicato"]) if n["pubblicato"] else None),  # PVL gives a date only; its time is a placeholder
                 ("Scadenza", when(n["scadenza"]) if n["scadenza"] else "non indicata"),
                 ("Valore stimato", euro(total) if total else None),
                 ("Luogo", ", ".join(places) + (f" ({', '.join(regs)})" if regs else "") if places else ", ".join(regs) or None),
