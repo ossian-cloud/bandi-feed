@@ -49,6 +49,8 @@ NATURE = ["Lavori", "Servizi", "Forniture"]
 
 
 def slug(s):
+    # accents transliterated, not dropped: Forlì-Cesena -> forli-cesena (was forl-cesena until 2026-10-14)
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", "-", s.lower().replace("'", "")).strip("-")
 
 
