@@ -169,6 +169,9 @@ def clean(n):
     for l in n["lotti"]:
         l["descrizione"] = html.unescape(l["descrizione"]) if l["descrizione"] else l["descrizione"]
         l["regione"], l["prov"] = geo.place(l["comune"], l["provincia"])  # so geo.py fixes apply to stored notices
+    for x in n["ente"]:
+        # ANAC's registry loses "°" in names like "2° REPARTO GENIO": it arrives as "2? REPARTO"
+        x["nome"] = re.sub(r"\b(\d+)\? ", "\\1° ", x["nome"]) if x["nome"] else x["nome"]
     s = n["scadenza"]
     if s and s[10:16] == "T23:59" and s.endswith(("Z", "+00:00")):
         # meant as 23:59 Italian time on that date; reading it as UTC would move it past midnight
