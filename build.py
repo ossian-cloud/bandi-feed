@@ -505,9 +505,10 @@ def write_custom(outdir, notices, now):
     data = {"updated": now, "base": BASE, "rights": RIGHTS,
             "subtitle": f"Bandi pubblicati su ANAC PVL, filtrati su misura. {SOURCE}. {DISCLAIMER}",
             "regions": REGIONS, "sectors": CPV_DIVISIONS, "rows": rows}
-    tmp = os.path.join(outdir, "feed", "su-misura.json.tmp")
-    json.dump(data, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
-    os.replace(tmp, os.path.join(outdir, "feed", "su-misura.json"))
+    tmp = os.path.join(outdir, "feed", "su-misura.json.gz.tmp")
+    with gzip.open(tmp, "wt", encoding="utf-8", compresslevel=9) as f:
+        json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+    os.replace(tmp, os.path.join(outdir, "feed", "su-misura.json.gz"))
     shutil.copy(os.path.join(HERE, "static", "su-misura.php"), os.path.join(outdir, "feed", "su-misura.php"))
 
 

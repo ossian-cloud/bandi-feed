@@ -42,7 +42,7 @@ if ($c !== '' && !preg_match('/^\d\d$/', $c)) fail(400, 'Settore CPV non valido:
 if (mb_strlen($r) > 40 || mb_strlen($p) > 60 || mb_strlen($q) > 120) fail(400, 'Parametro troppo lungo.');
 if ($v !== '' && !preg_match('/^\d{1,12}([.,]\d*)?$/', $v)) fail(400, 'Importo non valido: solo cifre, in euro.');
 
-$file = __DIR__ . '/su-misura.json';
+$file = __DIR__ . '/su-misura.json.gz';  // gzipped: plain, the two tools' files took 16 MB of the 100 MB hosting (15 Oct)
 $mtime = @filemtime($file);
 if ($mtime === false) fail(503, 'Dati non disponibili, riprova più tardi.');
 $etag = '"' . $mtime . '-' . (int)@filemtime(__FILE__) . '-' . md5(implode("\0", [$r, $p, $n, $c, $q, $v])) . '"';
@@ -53,6 +53,7 @@ $inm = array_map(fn($t) => preg_replace('/^W\//', '', trim($t)), explode(',', $_
 if (in_array($etag, $inm, true)) { http_response_code(304); exit; }
 
 $raw = @file_get_contents($file);
+if ($raw !== false) $raw = @gzdecode($raw);
 $D = $raw === false ? null : json_decode($raw, true);
 unset($raw);
 if (!is_array($D)) fail(503, 'Dati non disponibili, riprova più tardi.');

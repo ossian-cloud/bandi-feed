@@ -35,7 +35,7 @@ connection with ANAC.
 - PVL gives each lot's CPV as an Italian label only. `ref/cpv_it.json` (CPV 2008, from the EU Publications
   Office's EU Vocabularies SPARQL endpoint, release 20260520-0) maps labels back to codes; on 2026-10-06
   all 6,367 labelled lots matched exactly one code. Entries show the code, and the search page can filter by division.
-- It writes `feed/su-misura.json` (every notice with its filter fields and its ready-made Atom entry) for
+- It writes `feed/su-misura.json.gz` (every notice with its filter fields and its ready-made Atom entry) for
   `static/su-misura.php`, which serves a feed for any combination of the search filters
   (`?r=Regione&p=Provincia&n=Servizi&c=72&q=parole&v=100000`). It reads only the query string and stores nothing.
   The search page links to the feed of the current search.
