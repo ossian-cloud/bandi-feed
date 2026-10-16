@@ -929,6 +929,7 @@ La piattaforma è consultabile, ma non offre feed né avvisi. Questo sito li ric
 <h2>Cosa contiene</h2>
 <ul>
 <li>Bandi di gara, avvisi di preinformazione indittivi, indagini di mercato ed elenchi di operatori economici: le occasioni ancora aperte a cui un'impresa può partecipare. Esiti e affidamenti diretti non sono inclusi.</li>
+<li>Compaiono solo le procedure che hanno un bando o un avviso pubblico sulla piattaforma ANAC. Gli affidamenti diretti e le procedure negoziate senza bando, che la legge consente sotto certe soglie, non passano da qui (a volte l'ente le annuncia solo sul proprio sito). Gli avvisi che ANAC disattiva (per esempio perché sostituiti o revocati) spariscono dalle pagine entro un giorno.</li>
 <li>Per ogni avviso: oggetto, ente, procedura, scadenza, valore stimato, luogo, lotti con CIG e categoria, link all'avviso ANAC e ai documenti di gara.</li>
 <li>Ogni procedura ancora aperta ha una sua pagina, con tutti questi dati e i link a bandi simili. La pagina resta {GRACE_DAYS} giorni dopo la scadenza (senza indicizzazione) e poi viene tolta. Se una rettifica corregge un avviso, la pagina mostra la rettifica.</li>
 <li>Gli avvisi degli ultimi 30 giorni (massimo {MAX_ENTRIES} per feed). Nessun archivio storico.</li>

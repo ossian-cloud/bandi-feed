@@ -161,6 +161,9 @@ def main():
                     if tmpl_of.get(it.get("codiceScheda")) in GROUPS and not it.get("oscurato")
                     and it.get("attivo", True)}
             gone = [k for k, v in db.items() if (v["pubblicato"] or "")[:10] == day.isoformat() and k not in seen]
+            if gone and not items:  # an empty answer for a day we hold notices of: distrust it, keep them
+                print(f"{day}: 0 listed but {len(gone)} stored, keeping them", file=sys.stderr)
+                gone = []
             for k in gone:
                 del db[k]
             removed += len(gone)
