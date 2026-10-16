@@ -106,12 +106,15 @@ def name_case(s):
         lw = w.lower()
         if not w.strip() or w in "-/'’":
             out.append(w)
-        elif "." in w or (any(c.isdigit() for c in w)) or w in ("SPA", "SRL", "SCARL", "ASL", "ASP", "AOU", "ATS", "ASST", "INPS", "INAIL", "ANAS", "RFI", "ATER", "IPAB", "CUC", "SUA", "ARPA", "ACI", "AUSL", "ULSS", "ASM", "ACP"):
+        elif "." in w or (any(c.isdigit() for c in w)) or w in ("SPA", "SRL", "SCARL", "ASL", "ASP", "AOU", "ATS", "ASST", "INPS", "INAIL", "ANAS", "RFI", "ATER", "IPAB", "CUC", "SUA", "ARPA", "ACI", "AUSL", "ULSS", "ASM", "ACP", "IRCCS", "ESTAR"):
+            out.append(w)
+        elif re.fullmatch(r"«[A-Z]{2,5}»|\([A-Z]{2,5}\)", w):  # «VC», (ASST): a code on its own
             out.append(w)
         elif lw in SMALL and i > 0:
             out.append(lw)
         else:
-            out.append(lw[:1].upper() + lw[1:])
+            k = 1 if lw[:1] in "«\"(" else 0  # «SAN MATTEO» -> «San Matteo»
+            out.append(lw[:k + 1].upper() + lw[k + 1:])
     return "".join(out)
 
 
@@ -185,4 +188,4 @@ def accents(s):
         w, v = m.group(1), m.group(2)
         a = "é" if v.lower() == "e" and w.lower().endswith("ch") else _ACC[v.lower()]
         return w + (a.upper() if v.isupper() else a)
-    return re.sub(r"\b([A-Za-z]{2,})([AEIOUaeiou])['’`](?=[\s,.;:)!?/-]|$)", fix, s)
+    return re.sub(r"\b([A-Za-z]{2,})([AEIOUaeiou])['’`](?=[\s,.;:)!?/»\"-]|$)", fix, s)
