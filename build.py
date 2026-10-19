@@ -706,6 +706,13 @@ con i bandi ancora aperti dalla scadenza più vicina e il feed del settore. Aggi
     return indexable
 
 
+# regional Telegram channels (projects/telegram/channels.json, a pilot since 10-19); none in a plain checkout
+try:
+    TELEGRAM = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "telegram", "channels.json")))
+except (OSError, ValueError):
+    TELEGRAM = {}
+
+
 def write_region_pages(outdir, notices, now, provinces):
     """One HTML page per region: open notices grouped by province, soonest deadline first."""
     e = html.escape
@@ -727,13 +734,15 @@ def write_region_pages(outdir, notices, now, provinces):
                      f'<a class="pill" href="../feed/prov-{slug(pv)}.xml"><span aria-hidden="true">📡</span> Feed</a></div>') if pv else ""
             blocks.append(f'<h2 id="{anchor}">{e(title)} <small>({len(items)})</small></h2>\n{links}\n{items_html(items)}')
         s = slug(reg)
+        tg = (f'<a class="pill" href="https://t.me/{e(TELEGRAM[reg].lstrip("@"))}"><span aria-hidden="true">✈️</span> Canale Telegram</a>\n'
+              if reg in TELEGRAM else "")
         body = f"""{layout.crumbs([("zone.html", "Regioni e province"), ("", reg)], 1)}
 <h1>Bandi aperti in {e(reg)}</h1>
 <p class="lead">Avvisi con scadenza non ancora passata, per provincia, dalla scadenza più vicina. Aggiornato il {stamp(now)}.</p>
 <div class="actions"><a class="pill" href="../calendario/{s}.ics"><span aria-hidden="true">📅</span> Calendario della regione</a>
 <a class="pill" href="../feed/{s}.xml"><span aria-hidden="true">📡</span> Feed della regione</a>
 <a class="pill" href="../cerca.html#r={e(urllib.parse.quote(reg))}"><span aria-hidden="true">🔎</span> Cerca in {e(reg)}</a>
-<a class="pill" href="../come-ricevere.html">Come si usano?</a></div>
+{tg}<a class="pill" href="../come-ricevere.html">Come si usano?</a></div>
 {('<nav class="panel" aria-label="Province"><b>Vai alla provincia:</b><div class="actions">' + "".join(jump) + "</div></nav>") if len(jump) > 1 else ""}
 {('<nav class="panel" aria-label="Settori"><b>Per settore:</b><div class="actions">' + "".join(f'<a class="pill" href="../settore/{d}-{s}.html">{e(SECTOR_SHORT[d])} ({len(v)})</a>' for (r, d), v in sorted(pairs.items()) if r == reg) + "</div></nav>") if any(r == reg for r, _ in pairs) else ""}
 {chr(10).join(blocks) or "<p>Nessun avviso aperto al momento.</p>"}"""
