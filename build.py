@@ -4,6 +4,7 @@ Usage: python3 build.py OUTDIR   (e.g. ../../site/bandi)
 """
 import datetime as dt
 import gzip
+import hashlib
 import html
 import json
 import os
@@ -23,6 +24,8 @@ from ics import write_calendar
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data", "notices.json")
 CATS = os.path.join(HERE, "data", "categorie.json")
+LASTMOD = os.path.join(HERE, "data", "page-lastmod.json")
+STAMP_RE = re.compile(rb"[Aa]ggiornato il \d\d/\d\d/\d{4} alle \d\d:\d\d")
 CPV = os.path.join(HERE, "ref", "cpv_it.json")  # CPV 2008, Publications Office of the EU (EU Vocabularies)
 BASE = "https://ossian.cloud/bandi"
 SOURCE = "Fonte: ANAC, Piattaforma di Pubblicità a Valore Legale, CC BY 4.0"
@@ -519,7 +522,24 @@ def write_sitemap(outdir, now, notice_ids=(), combos=()):
     pages += sorted(f"provincia/{f}" for f in os.listdir(os.path.join(outdir, "provincia")) if f.endswith(".html"))
     pages += ["settori.html"] + sorted(f"settore/{f}" for f in os.listdir(os.path.join(outdir, "settore")) if re.fullmatch(r"\d\d\.html", f))
     pages += sorted(combos)  # sector-in-region pages; those with few notices are noindex and stay out
-    urls = "".join(f"<url><loc>{BASE}/{p}</loc><lastmod>{now}</lastmod></url>\n" for p in pages)
+    # A list page's lastmod moves only when its content does (the "Aggiornato il …" stamp aside):
+    # a build-time lastmod on every cycle made IndexNow re-announce ~330 unchanged pages six times a day.
+    try:
+        with open(LASTMOD) as f:
+            seen = json.load(f)
+    except FileNotFoundError:
+        seen = {}
+    state = {}
+    for p in pages:
+        with open(os.path.join(outdir, p or "index.html"), "rb") as f:
+            h = hashlib.sha1(STAMP_RE.sub(b"", f.read())).hexdigest()
+        old = seen.get(p)
+        state[p] = old if old and old[0] == h else [h, now]
+    tmp = LASTMOD + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(state, f)
+    os.replace(tmp, LASTMOD)
+    urls = "".join(f"<url><loc>{BASE}/{p}</loc><lastmod>{state[p][1]}</lastmod></url>\n" for p in pages)
     # A notice page changes only when its notice does: give it the publication time, not the build time.
     urls += "".join(f"<url><loc>{BASE}/avviso/{i}.html</loc>" + (f"<lastmod>{t}</lastmod>" if t else "") + "</url>\n"
                     for i, t in notice_ids)
