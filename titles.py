@@ -149,6 +149,7 @@ def cut(s, n):
 def short_ente(ente):
     """A short, readable name of the contracting body for titles."""
     e = ente.split(";")[0].strip()
+    e = re.sub(r"^(?:IRCCS|C\.?U\.?C\.?)\s+-\s+(?=.{12})", "", e)  # a generic type first: the name follows
     if " - " in e and len(e) > 40:
         e = e.split(" - ")[0]
     e = re.sub(r"\s*(SOCIETA'|SOCIETÀ|società)\s+PER\s+AZIONI\b|\s+S\.?P\.?A\.?$|\s+S\.?R\.?L\.?$|\s+SCARL$", "", e, flags=re.I).strip(" ,-")
