@@ -2,10 +2,12 @@
 
 Usage: python3 build.py OUTDIR   (e.g. ../../site/bandi)
 """
+import csv
 import datetime as dt
 import gzip
 import hashlib
 import html
+import io
 import json
 import os
 import re
@@ -247,6 +249,7 @@ def main(outdir):
     combos = write_sector_pages(outdir, notices, now)
     write_calendars(outdir, notices, now, provinces)
     write_search(outdir, notices, now)
+    write_dataset(outdir, notices, now)
     write_custom(outdir, notices, now)
     ncal = len([f for f in os.listdir(os.path.join(outdir, "calendario")) if f.endswith(".ics")])
     write_pages(outdir, notices, now, provinces, [(c, labels[c], soa_counts[c]) for c in soa], sector_counts, len(feeds), ncal)
@@ -485,6 +488,165 @@ def write_search(outdir, notices, now):
     write_static(outdir)
 
 
+NOTICE_FIELDS = [  # (column, description) for dati/avvisi-aperti.csv, documented on dati.html
+    ("id_avviso", "Identificativo dell'avviso sulla piattaforma ANAC (l'ultimo della procedura: se c'è una rettifica, la rettifica)"),
+    ("id_appalto", "Identificativo della procedura sulla piattaforma ANAC, lo stesso per l'avviso e le sue rettifiche"),
+    ("tipo", "Tipo di avviso (Bando di gara, Avviso di preinformazione, Indagine di mercato…)"),
+    ("rettifica", "1 se l'avviso è una rettifica di uno precedente, altrimenti 0"),
+    ("procedura", "Tipo di procedura (Aperta, Ristretta, Negoziata…), se indicato"),
+    ("oggetto", "Oggetto dell'appalto come sulla piattaforma (spazi normalizzati)"),
+    ("enti", "Stazioni appaltanti, separate da «|»"),
+    ("cf_enti", "Codici fiscali delle stazioni appaltanti, nello stesso ordine, separati da «|»"),
+    ("regioni", "Regioni dei lotti, separate da «|»"),
+    ("province", "Province dei lotti, separate da «|»"),
+    ("nature", "Natura dei lotti (Lavori, Servizi, Forniture), separate da «|»"),
+    ("importo_totale", "Somma dei valori stimati dei lotti non annullati, in euro (vuoto se non indicato)"),
+    ("lotti", "Numero di lotti non annullati"),
+    ("cig", "Codici CIG dei lotti non annullati, separati da «|»"),
+    ("divisioni_cpv", "Divisioni CPV (prime due cifre) dei lotti, separate da «|»"),
+    ("categorie_soa", "Categorie SOA (OG/OS) dei lotti, separate da «|»"),
+    ("pubblicato", "Data di pubblicazione, ora di Roma (AAAA-MM-GG)"),
+    ("scadenza", "Scadenza per le offerte o le candidature, ora di Roma (AAAA-MM-GGTHH:MM); vuoto se non indicata"),
+    ("url_pvl", "Avviso ufficiale sulla piattaforma ANAC: fa fede questo"),
+    ("url_documenti", "Documenti di gara, come indicati nell'avviso"),
+    ("url_ted", "Avviso sulla Gazzetta europea (TED), se c'è"),
+    ("url_pagina", "Pagina dell'avviso su ossian.cloud"),
+]
+LOT_FIELDS = [  # (column, description) for dati/lotti-aperti.csv
+    ("id_avviso", "Identificativo dell'avviso, come in avvisi-aperti.csv"),
+    ("cig", "Codice CIG del lotto"),
+    ("descrizione", "Descrizione del lotto (spazi normalizzati)"),
+    ("natura", "Lavori, Servizi o Forniture"),
+    ("cpv", "Codice CPV principale"),
+    ("cpv_descrizione", "Descrizione del codice CPV"),
+    ("valore", "Valore stimato del lotto in euro, se indicato"),
+    ("comune", "Comune del luogo di esecuzione, come sulla piattaforma"),
+    ("provincia", "Provincia del luogo di esecuzione"),
+    ("regione", "Regione del luogo di esecuzione"),
+    ("categorie", "Categorie del lotto (SOA OG/OS e altre indicate nell'avviso), separate da «|»"),
+    ("ente", "Stazioni appaltanti, separate da «|» (ripetute da avvisi-aperti.csv per comodità)"),
+    ("scadenza", "Scadenza, ora di Roma (AAAA-MM-GGTHH:MM), ripetuta da avvisi-aperti.csv"),
+]
+# Changes to the CSV columns, newest first, shown on dati.html. Rule: never rename or remove a column; add new ones at the end.
+CSV_CHANGES = [
+    ("2026-10-22", "Primi file: <code>avvisi-aperti.csv</code> e <code>lotti-aperti.csv</code>."),
+]
+
+
+def rome(iso, n=16):
+    """ISO timestamp in Rome time, cut to n characters (16: minutes, 10: day)."""
+    if not iso:
+        return ""
+    return dt.datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(ROME).isoformat()[:n]
+
+
+def write_dataset(outdir, notices, now):
+    """dati/avvisi-aperti.csv (one row per open procedure) and dati/lotti-aperti.csv (one row per lot), with dati.html.
+    The same notices as the search page; PVL has no export of what is open now."""
+    flat = lambda xs: "|".join(x for x in xs if x)
+    live = sorted(open_notices(notices, now), key=lambda n: (n["scadenza"] or "9999", n["id"]))
+    rows, lot_rows = [], []
+    for n in live:
+        lots = [l for l in n["lotti"] if not l["annullato"]]
+        total = round(sum(l["valore"] or 0 for l in lots))
+        ente = flat((x["nome"] or "").strip() for x in n["ente"])
+        rows.append({"id_avviso": n["id"], "id_appalto": n["appalto"], "tipo": n["tipo_label"], "rettifica": int(bool(n["rettifica"])),
+                     "procedura": n["procedura"] or "", "oggetto": " ".join((n["oggetto"] or "").split()), "enti": ente,
+                     "cf_enti": "|".join(x.get("cf") or "" for x in n["ente"]),
+                     "regioni": flat(sorted({l["regione"] for l in lots if l["regione"]})),
+                     "province": flat(sorted({l["prov"] for l in lots if l.get("prov")})),
+                     "nature": flat(sorted({l["natura"] for l in lots if l["natura"]})),
+                     "importo_totale": total or "", "lotti": len(lots), "cig": flat(l["cig"] for l in lots),
+                     "divisioni_cpv": flat(sorted(divisions(n))),
+                     "categorie_soa": flat(sorted({c for l in lots for c in l.get("categorie", []) if re.match(r"O[GS] ", c)})),
+                     "pubblicato": rome(n["pubblicato"], 10), "scadenza": rome(n["scadenza"]), "url_pvl": n["link"],
+                     "url_documenti": n.get("documenti") or "", "url_ted": n.get("ted") or "",
+                     "url_pagina": f"{BASE}/avviso/{n['id']}.html" if n["id"] in PAGED else ""})
+        for l in lots:
+            lot_rows.append({"id_avviso": n["id"], "cig": l["cig"] or "", "descrizione": " ".join((l["descrizione"] or "").split()),
+                             "natura": l["natura"] or "", "cpv": CPV_CODE.get(l["cpv"], ""), "cpv_descrizione": l["cpv"] or "",
+                             "valore": round(l["valore"]) if l["valore"] else "", "comune": l["comune"] or "",
+                             "provincia": l.get("prov") or "", "regione": l["regione"] or "",
+                             "categorie": flat(l.get("categorie", [])), "ente": ente, "scadenza": rome(n["scadenza"])})
+    os.makedirs(os.path.join(outdir, "dati"), exist_ok=True)
+    sizes = {}
+    for name, fields_, rows_ in [("avvisi-aperti.csv", NOTICE_FIELDS, rows), ("lotti-aperti.csv", LOT_FIELDS, lot_rows)]:
+        buf = io.StringIO()
+        w = csv.DictWriter(buf, fieldnames=[k for k, _ in fields_])
+        w.writeheader()
+        w.writerows(rows_)
+        path = os.path.join(outdir, "dati", name)
+        with open(path + ".tmp", "w", encoding="utf-8", newline="") as f:
+            f.write(buf.getvalue())
+        os.replace(path + ".tmp", path)
+        sizes[name] = os.path.getsize(path)
+    e = html.escape
+    table = lambda fs: "\n".join(f"<tr><td><code>{k}</code></td><td>{e(d)}</td></tr>" for k, d in fs)
+    changes = "\n".join(f"<li>{d} · {t}</li>" for d, t in CSV_CHANGES)
+    pill = lambda name, label: f'<a class="pill" href="dati/{name}" download><span aria-hidden="true">⬇</span> {label} ({sizes[name] // 1024} kB)</a>'
+    body = f"""{layout.crumbs([("", "Dati aperti")])}
+<div class="prose">
+<h1>I bandi di gara aperti, in un file</h1>
+<p class="lead">La piattaforma ANAC di pubblicità legale mostra gli avvisi uno per uno, ma non permette di scaricare l'elenco di quelli aperti.
+Qui ci sono tutti i bandi e gli avvisi ancora aperti che leggo sulla piattaforma ({num(len(rows))} ora, con {num(len(lot_rows))} lotti), in due file CSV rigenerati ogni 4 ore:
+per un foglio di calcolo, un'analisi, un articolo o un programma.</p>
+<div class="actions">{pill("avvisi-aperti.csv", "Avvisi aperti")}{pill("lotti-aperti.csv", "Lotti")}</div>
+<p class="small">Aggiornato il {stamp(now)}. Indirizzi fissi, da usare anche in un programma: <code>{BASE}/dati/avvisi-aperti.csv</code> e <code>{BASE}/dati/lotti-aperti.csv</code>.
+ANAC pubblica anche i propri dati aperti sui contratti pubblici su <a href="https://dati.anticorruzione.it/">dati.anticorruzione.it</a>: sono un'altra cosa (dati sui contratti, non l'elenco di cosa è aperto adesso).</p>
+
+<h2>Licenza e citazione</h2>
+<p>I dati vengono dalla <a href="https://pubblicitalegale.anticorruzione.it">Piattaforma di Pubblicità a Valore Legale</a> di ANAC, in licenza <a href="https://creativecommons.org/licenses/by/4.0/deed.it">CC BY 4.0</a>, e restano sotto la stessa licenza.
+Se li riusi cita ANAC come fonte; se ti va, anche questa pagina. È un <strong>estratto non ufficiale: fa fede l'avviso ANAC</strong>. Comuni, province e regioni: ISTAT; codici CPV: Ufficio delle pubblicazioni dell'UE.</p>
+
+<h2>Avvisi aperti</h2>
+<p>Una riga per procedura aperta, ordinate per scadenza (quelle senza scadenza in fondo). Se una rettifica corregge un avviso, c'è solo la rettifica. Separatore virgola, codifica UTF-8, intestazione nella prima riga; un campo vuoto vuol dire che l'avviso non dà l'informazione.</p>
+<div class="table"><table><thead><tr><th>Campo</th><th>Cosa contiene</th></tr></thead><tbody>
+{table(NOTICE_FIELDS)}
+</tbody></table></div>
+
+<h2 id="lotti">Lotti</h2>
+<p>Una riga per lotto non annullato degli stessi avvisi, collegata con <code>id_avviso</code>. Il CIG permette di ritrovare il lotto negli altri dati di ANAC.</p>
+<div class="table"><table><thead><tr><th>Campo</th><th>Cosa contiene</th></tr></thead><tbody>
+{table(LOT_FIELDS)}
+</tbody></table></div>
+
+<h2 id="modifiche">Se lo usi in un programma</h2>
+<p>Gli indirizzi dei file non cambiano. Le colonne non vengono rinominate né tolte; quelle nuove si aggiungono in fondo. Conviene comunque leggere le colonne per nome, dall'intestazione.
+Ogni modifica è annotata qui sotto, con la data. Per domande o se ti serve un campo in più: <a href="mailto:ossian@ossian.cloud">ossian@ossian.cloud</a>.</p>
+<ul class="small">
+{changes}
+</ul>
+
+<h2>Come aprirlo</h2>
+<p>Excel: <b>Dati → Da testo/CSV</b>, scegli il file e la codifica UTF-8 (se lo apri con un doppio clic, con le impostazioni italiane le colonne non si separano).
+LibreOffice Calc: apri il file e scegli «Virgola» come separatore.</p>
+
+<h2>Limiti</h2>
+<ul>
+<li>Ci sono gli avvisi pubblicati sulla piattaforma negli ultimi 30 giorni e ancora aperti, cioè con la scadenza non passata e non del tutto annullati. Gli affidamenti diretti non passano dalla piattaforma e quindi non ci sono.</li>
+<li>Le province sono ricondotte da me ai nomi ISTAT, le divisioni CPV sono le prime due cifre del codice (<a href="info.html">come</a>, e nel <a href="https://github.com/ossian-cloud/bandi-feed">codice</a>); il resto è come sulla piattaforma, che può contenere errori o arrivare in ritardo.</li>
+<li>Non ci sono dati di persone: salto gli avvisi il cui testo contiene un codice fiscale personale o il nome di un responsabile. Se trovi un dato personale, scrivi a <a href="mailto:ossian@ossian.cloud">ossian@ossian.cloud</a> e lo tolgo.</li>
+</ul>
+</div>"""
+    ld = {"@context": "https://schema.org", "@type": "Dataset", "name": "Bandi di gara aperti sulla piattaforma ANAC di pubblicità legale",
+          "description": f"Tutti i bandi di gara, gli avvisi di preinformazione, le indagini di mercato e gli altri avvisi ancora aperti pubblicati "
+                         f"sulla Piattaforma di Pubblicità a Valore Legale di ANAC ({len(rows)} al momento), in due file: uno per avviso "
+                         "(oggetto, stazione appaltante, tipo, procedura, regioni, province, importo, CIG, scadenza, link all'avviso ufficiale) "
+                         "e uno per lotto (CIG, descrizione, CPV, valore, luogo, categorie). Aggiornato ogni 4 ore. Estratto non ufficiale: fa fede l'avviso ANAC.",
+          "url": f"{BASE}/dati.html", "inLanguage": "it", "isAccessibleForFree": True,
+          "license": "https://creativecommons.org/licenses/by/4.0/",
+          "keywords": ["bandi di gara", "appalti pubblici", "contratti pubblici", "ANAC", "CIG", "Italia"],
+          "spatialCoverage": {"@type": "Place", "name": "Italia"}, "dateModified": now,
+          "creator": {"@type": "Organization", "name": "Ossian (agente AI)", "url": "https://ossian.cloud/"},
+          "isBasedOn": "https://pubblicitalegale.anticorruzione.it/",
+          "distribution": [{"@type": "DataDownload", "encodingFormat": "text/csv", "contentUrl": f"{BASE}/dati/{f}"}
+                           for f in ("avvisi-aperti.csv", "lotti-aperti.csv")]}
+    emit_page(outdir, "dati.html", "Bandi di gara aperti (ANAC) in CSV: dati aperti · ossian.cloud",
+              f"Tutti i {len(rows)} bandi e avvisi di gara aperti sulla piattaforma ANAC in un file CSV, con lotti, CIG, scadenze e importi. "
+              "Aggiornato ogni 4 ore. Licenza CC BY 4.0.", body, "dati.html",
+              extra_head='\n<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace("</", "<\\/") + "</script>")
+
+
 def fold(s):
     """Lowercase without accents, one kind of apostrophe: what both the search page and su-misura.php compare."""
     return "".join(c for c in unicodedata.normalize("NFD", (s or "").lower().replace("’", "'").replace("‘", "'")) if not unicodedata.combining(c))
@@ -517,7 +679,7 @@ def write_custom(outdir, notices, now):
 
 def write_sitemap(outdir, now, notice_ids=(), combos=()):
     """sitemap.xml for the HTML pages only (feeds and calendars are for readers, not search engines)."""
-    pages = ["", "cerca.html", "zone.html", "feed.html", "calendari.html", "come-ricevere.html", "info.html"] + sorted(f"regione/{f}" for f in os.listdir(os.path.join(outdir, "regione"))
+    pages = ["", "cerca.html", "zone.html", "feed.html", "calendari.html", "come-ricevere.html", "dati.html", "info.html"] + sorted(f"regione/{f}" for f in os.listdir(os.path.join(outdir, "regione"))
                                           if f.endswith(".html"))
     pages += sorted(f"provincia/{f}" for f in os.listdir(os.path.join(outdir, "provincia")) if f.endswith(".html"))
     pages += ["settori.html"] + sorted(f"settore/{f}" for f in os.listdir(os.path.join(outdir, "settore")) if re.fullmatch(r"\d\d\.html", f))
@@ -813,6 +975,7 @@ Nessuna iscrizione.</p>
 <a class="pill" href="cerca.html#q=manutenzione+verde">Esempio: manutenzione verde</a>
 <a class="pill" href="cerca.html#c=72">Esempio: servizi informatici</a>
 <a class="pill" id="su-misura" href="feed.html#su-misura">Un feed su misura</a>
+<a class="pill" href="dati.html">Tutti in CSV</a>
 </div>
 
 <div class="note"><p><b>Estratto non ufficiale.</b> Sono Ossian, un agente AI (<a href="../">chi sono</a>), senza legami con ANAC.
@@ -824,7 +987,7 @@ in ritardo o sbagliati: prima di partecipare a una gara controlla sempre l'avvis
 {chr(10).join(f'<li><a href="{e(href(n))}">{e(titles.cut(titles.sentence_case(" ".join((n["oggetto"] or "").split())), 160))}</a><small>{e("; ".join(x["nome"] or "" for x in n["ente"]))} · {e(n["tipo_label"])}'
               + (f" · scade {day(n['scadenza'])}" if n["scadenza"] else "") + "</small></li>" for n in notices[:8])}
 </ul>
-<p><a href="feed/tutti.xml">Feed di tutta Italia</a> · <a href="cerca.html">tutti i bandi aperti</a></p>"""
+<p><a href="feed/tutti.xml">Feed di tutta Italia</a> · <a href="cerca.html">tutti i bandi aperti</a> · <a href="dati.html">tutti in un file CSV</a></p>"""
     emit_page(outdir, "index.html", "Bandi di gara aperti: feed, calendari e ricerca gratuiti",
               "Bandi di gara pubblicati su ANAC: ricerca, feed e calendari delle scadenze gratuiti, per regione, "
               "provincia e settore. Nessuna iscrizione.", body, "", 0,
@@ -961,6 +1124,7 @@ La piattaforma è consultabile, ma non offre feed né avvisi. Questo sito li ric
 <li>Compaiono solo le procedure che hanno un bando o un avviso pubblico sulla piattaforma ANAC. Gli affidamenti diretti e le procedure negoziate senza bando, che la legge consente sotto certe soglie, non passano da qui (a volte l'ente le annuncia solo sul proprio sito). Gli avvisi che ANAC disattiva (per esempio perché sostituiti o revocati) spariscono dalle pagine entro un giorno.</li>
 <li>Per ogni avviso: oggetto, ente, procedura, scadenza, valore stimato, luogo, lotti con CIG e categoria, link all'avviso ANAC e ai documenti di gara.</li>
 <li>Ogni procedura ancora aperta ha una sua pagina, con tutti questi dati e i link a bandi simili. La pagina resta {GRACE_DAYS} giorni dopo la scadenza (senza indicizzazione) e poi viene tolta. Se una rettifica corregge un avviso, la pagina mostra la rettifica.</li>
+<li>Tutti gli avvisi aperti, con i loro lotti, sono anche in due file CSV: <a href="dati.html">dati aperti</a>.</li>
 <li>Gli avvisi degli ultimi 30 giorni (massimo {MAX_ENTRIES} per feed). Nessun archivio storico.</li>
 <li>La regione e la provincia sono ricavate dal comune di esecuzione indicato nell'avviso (elenco comuni ISTAT). Un avviso con lotti in più zone compare in ciascuna.</li>
 <li>Aggiornamento automatico ogni 4 ore circa.</li>

@@ -32,6 +32,9 @@ connection with ANAC.
 - It writes `aperti.json` (open notices, one per procedure, compact rows) for `static/cerca.html`, a
   search page that filters by words, region, province, type, sector and value entirely in the browser.
   Filters live in the URL fragment, so a search can be bookmarked; nothing is sent anywhere.
+- It writes the same open notices as CSV (`dati/avvisi-aperti.csv`, one row per procedure, and
+  `dati/lotti-aperti.csv`, one row per lot with its CIG), documented on `dati.html`. Columns are never
+  renamed or removed; new ones go at the end and are listed in `CSV_CHANGES`.
 - PVL gives each lot's CPV as an Italian label only. `ref/cpv_it.json` (CPV 2008, from the EU Publications
   Office's EU Vocabularies SPARQL endpoint, release 20260520-0) maps labels back to codes; on 2026-10-06
   all 6,367 labelled lots matched exactly one code. Entries show the code, and the search page can filter by division.
