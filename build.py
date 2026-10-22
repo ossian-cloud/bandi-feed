@@ -532,6 +532,29 @@ CSV_CHANGES = [
     ("2026-10-22", "Primi file: <code>avvisi-aperti.csv</code> e <code>lotti-aperti.csv</code>."),
 ]
 
+# Frictionless types for dati/datapackage.json; any column not listed is a string.
+FIELD_TYPES = {"rettifica": "integer", "importo_totale": "integer", "lotti": "integer", "pubblicato": "date", "valore": "integer"}
+
+
+def write_datapackage(outdir, now):
+    """dati/datapackage.json: a Frictionless Data Package describing the two CSVs, so tools can read them with types."""
+    res = lambda name, title, fields_: {
+        "name": name[:-4], "path": f"{BASE}/dati/{name}", "title": title, "format": "csv", "mediatype": "text/csv", "encoding": "utf-8",
+        "schema": {"fields": [{"name": k, "type": FIELD_TYPES.get(k, "string"), "description": d} for k, d in fields_],
+                   "missingValues": [""]}}
+    pkg = {"name": "ossian-bandi", "title": "Bandi di gara aperti sulla piattaforma ANAC di pubblicità legale",
+           "description": f"Estratto non ufficiale, aggiornato ogni 4 ore: fa fede l'avviso ANAC. Campi e limiti: {BASE}/dati.html",
+           "homepage": f"{BASE}/dati.html", "version": CSV_CHANGES[0][0], "created": now,
+           "licenses": [{"name": "CC-BY-4.0", "path": "https://creativecommons.org/licenses/by/4.0/", "title": "CC BY 4.0"}],
+           "sources": [{"title": "ANAC, Piattaforma di Pubblicità a Valore Legale", "path": "https://pubblicitalegale.anticorruzione.it"}],
+           "contributors": [{"title": "Ossian (agente AI)", "path": "https://ossian.cloud/", "role": "author"}],
+           "resources": [res("avvisi-aperti.csv", "Avvisi aperti, uno per procedura", NOTICE_FIELDS),
+                         res("lotti-aperti.csv", "Lotti non annullati degli avvisi aperti", LOT_FIELDS)]}
+    path = os.path.join(outdir, "dati", "datapackage.json")
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(pkg, f, ensure_ascii=False, indent=1)
+    os.replace(path + ".tmp", path)
+
 
 def rome(iso, n=16):
     """ISO timestamp in Rome time, cut to n characters (16: minutes, 10: day)."""
@@ -580,6 +603,7 @@ def write_dataset(outdir, notices, now):
             f.write(buf.getvalue())
         os.replace(path + ".tmp", path)
         sizes[name] = os.path.getsize(path)
+    write_datapackage(outdir, now)
     e = html.escape
     table = lambda fs: "\n".join(f"<tr><td><code>{k}</code></td><td>{e(d)}</td></tr>" for k, d in fs)
     changes = "\n".join(f"<li>{d} · {t}</li>" for d, t in CSV_CHANGES)
@@ -612,6 +636,7 @@ Se li riusi cita ANAC come fonte; se ti va, anche questa pagina. È un <strong>e
 
 <h2 id="modifiche">Se lo usi in un programma</h2>
 <p>Gli indirizzi dei file non cambiano. Le colonne non vengono rinominate né tolte; quelle nuove si aggiungono in fondo. Conviene comunque leggere le colonne per nome, dall'intestazione.
+Nomi, tipi e descrizioni delle colonne sono anche in <a href="dati/datapackage.json"><code>datapackage.json</code></a> (formato <a href="https://datapackage.org/">Frictionless Data Package</a>).
 Ogni modifica è annotata qui sotto, con la data. Per domande o se ti serve un campo in più: <a href="mailto:ossian@ossian.cloud">ossian@ossian.cloud</a>.</p>
 <ul class="small">
 {changes}
