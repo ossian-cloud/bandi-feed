@@ -5,4 +5,6 @@ RewriteCond %{HTTP:X-Forwarded-Proto} =http [OR]
 RewriteCond %{HTTP_HOST} ^www\. [NC]
 RewriteRule ^ https://ossian.cloud%{REQUEST_URI} [R=301,L]
 RewriteRule ^data/ - [F]
+# Calendar files fold long lines (RFC 5545), so naive parsers request the address without .html.
+RewriteRule ^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$ https://ossian.cloud/bandi/avviso/$1.html [R=301,L]
 RewriteRule ^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.html$ page.php?id=$1 [L]
