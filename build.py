@@ -494,15 +494,15 @@ NOTICE_FIELDS = [  # (column, description) for dati/avvisi-aperti.csv, documente
     ("tipo", "Tipo di avviso (Bando di gara, Avviso di preinformazione, Indagine di mercato…)"),
     ("rettifica", "1 se l'avviso è una rettifica di uno precedente, altrimenti 0"),
     ("procedura", "Tipo di procedura (Aperta, Ristretta, Negoziata…), se indicato"),
-    ("oggetto", "Oggetto dell'appalto come sulla piattaforma (spazi normalizzati)"),
+    ("oggetto", "Oggetto dell'appalto come sulla piattaforma (spazi normalizzati); se la descrizione è solo un rimando («Si veda documentazione di gara») o pochi caratteri, il titolo dell'avviso"),
     ("enti", "Stazioni appaltanti, separate da «|»"),
-    ("cf_enti", "Codici fiscali delle stazioni appaltanti, nello stesso ordine, separati da «|»"),
+    ("cf_enti", "Codici fiscali delle stazioni appaltanti, nello stesso ordine, separati da «|»; per alcuni enti senza codice fiscale è un codice interno ANAC che inizia con «CFAVCP-»"),
     ("regioni", "Regioni dei lotti, separate da «|»"),
     ("province", "Province dei lotti, separate da «|»"),
     ("nature", "Natura dei lotti (Lavori, Servizi, Forniture), separate da «|»"),
-    ("importo_totale", "Somma dei valori stimati dei lotti non annullati, in euro (vuoto se non indicato)"),
+    ("importo_totale", "Somma dei valori stimati dei lotti non annullati, in euro, arrotondata dopo la somma: può differire di qualche euro dalla somma dei valori arrotondati di lotti-aperti.csv (vuoto se non indicato o zero)"),
     ("lotti", "Numero di lotti non annullati"),
-    ("cig", "Codici CIG dei lotti non annullati, separati da «|»"),
+    ("cig", "Codici CIG dei lotti non annullati, separati da «|»; i lotti senza CIG (per esempio gli elenchi di operatori economici) non compaiono, quindi possono essere meno di «lotti»"),
     ("divisioni_cpv", "Divisioni CPV (prime due cifre) dei lotti, separate da «|»"),
     ("categorie_soa", "Categorie SOA (OG/OS) dei lotti, separate da «|»"),
     ("pubblicato", "Data di pubblicazione, ora di Roma (AAAA-MM-GG)"),
@@ -519,7 +519,7 @@ LOT_FIELDS = [  # (column, description) for dati/lotti-aperti.csv
     ("natura", "Lavori, Servizi o Forniture"),
     ("cpv", "Codice CPV principale"),
     ("cpv_descrizione", "Descrizione del codice CPV"),
-    ("valore", "Valore stimato del lotto in euro, se indicato"),
+    ("valore", "Valore stimato del lotto in euro, come sulla piattaforma; vuoto se non indicato o zero. Alcune indagini di mercato indicano un valore simbolico (1 euro)"),
     ("comune", "Comune del luogo di esecuzione, come sulla piattaforma"),
     ("provincia", "Provincia del luogo di esecuzione"),
     ("regione", "Regione del luogo di esecuzione"),
@@ -529,6 +529,7 @@ LOT_FIELDS = [  # (column, description) for dati/lotti-aperti.csv
 ]
 # Changes to the CSV columns, newest first, shown on dati.html. Rule: never rename or remove a column; add new ones at the end.
 CSV_CHANGES = [
+    ("2026-10-23", "<code>oggetto</code>: quando la descrizione è solo un rimando ai documenti di gara, il titolo dell'avviso. Descrizioni dei campi più precise (codici CFAVCP, CIG mancanti, arrotondamenti). Nessuna colonna cambiata."),
     ("2026-10-22", "Primi file: <code>avvisi-aperti.csv</code> e <code>lotti-aperti.csv</code>."),
 ]
 

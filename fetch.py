@@ -8,6 +8,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import sys
 import time
 import urllib.parse
@@ -76,6 +77,20 @@ def num(v):
         return None
 
 
+# "Si veda documentazione di gara" and the like: the real subject is then in metadata.titolo
+PLACEHOLDER = re.compile(r"^\W*(si\s+)?(veda|vedi|vedasi|come da|cfr\.?|consultare|si rimanda)\b.*"
+                         r"(document|disciplinar|bando|allegat|atti|capitolato|lettera)", re.I)
+
+
+def subject(md):
+    """The notice's subject: its description, unless that is a placeholder or a stub and the title says more."""
+    raw = md.get("descrizione")
+    desc, title = (raw or "").strip(), (md.get("titolo") or "").strip()
+    if title and (not desc or (len(desc) < 90 and PLACEHOLDER.search(desc)) or (len(desc) < 15 and len(title) > len(desc))):
+        return title
+    return raw or md.get("titolo")
+
+
 def slim(item, template):
     """Keep only what a reader needs. No winners, no personal fields."""
     group, label, root = GROUPS[template]
@@ -112,7 +127,7 @@ def slim(item, template):
         "link": f"{SITE}/{root}/{item['idAvviso']}",
         "pubblicato": item.get("dataPubblicazione"),
         "scadenza": item.get("dataScadenza"),
-        "oggetto": T.get("metadata", {}).get("descrizione") or T.get("metadata", {}).get("titolo"),
+        "oggetto": subject(T.get("metadata", {})),
         "ente": [{"nome": s.get("denominazione_amministrazione"), "cf": s.get("codice_fiscale")} for s in sa],
         "procedura": gen.get("tipo_procedura_aggiudicazione"),
         "documenti": gen.get("documenti_di_gara_link"),
