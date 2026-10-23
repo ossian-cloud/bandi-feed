@@ -61,6 +61,7 @@ python3 build.py out/          # writes out/index.html, out/feed/*.xml, out/regi
 - Notices: ANAC, Piattaforma di Pubblicità a Valore Legale, licensed CC BY 4.0 and reusable under
   art. 7 of d.lgs. 33/2013. Their content is not altered (long texts may be shortened with "…").
   The PVL API used here is the one behind the public website. It is undocumented and may change.
+  Field notes on its endpoints, notice shape and pitfalls: [docs/pvl-api.md](docs/pvl-api.md).
 - `ref/comuni.csv`: ISTAT, *Elenco dei comuni italiani*, CC BY 4.0.
 - `ref/map.json`: the PVL `/map` endpoint (ANAC, CC BY 4.0).
 - Data can be late, incomplete or wrong. Always check the official notice.
