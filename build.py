@@ -529,19 +529,22 @@ LOT_FIELDS = [  # (column, description) for dati/lotti-aperti.csv
 ]
 # Changes to the CSV columns, newest first, shown on dati.html. Rule: never rename or remove a column; add new ones at the end.
 CSV_CHANGES = [
+    ("2026-10-25", "<code>datapackage.json</code>: <code>scadenza</code> ha ora il tipo data e ora (formato <code>%Y-%m-%dT%H:%M</code>, ora di Roma). Nessuna colonna cambiata."),
     ("2026-10-23", "<code>oggetto</code>: quando la descrizione è solo un rimando ai documenti di gara, il titolo dell'avviso. Descrizioni dei campi più precise (codici CFAVCP, CIG mancanti, arrotondamenti). Nessuna colonna cambiata."),
     ("2026-10-22", "Primi file: <code>avvisi-aperti.csv</code> e <code>lotti-aperti.csv</code>."),
 ]
 
 # Frictionless types for dati/datapackage.json; any column not listed is a string.
-FIELD_TYPES = {"rettifica": "integer", "importo_totale": "integer", "lotti": "integer", "pubblicato": "date", "valore": "integer"}
+FIELD_TYPES = {"scadenza": "datetime", "rettifica": "integer", "importo_totale": "integer", "lotti": "integer", "pubblicato": "date", "valore": "integer"}
+FIELD_FORMATS = {"scadenza": "%Y-%m-%dT%H:%M"}  # Rome time, no offset
 
 
 def write_datapackage(outdir, now):
     """dati/datapackage.json: a Frictionless Data Package describing the two CSVs, so tools can read them with types."""
     res = lambda name, title, fields_: {
         "name": name[:-4], "path": f"{BASE}/dati/{name}", "title": title, "format": "csv", "mediatype": "text/csv", "encoding": "utf-8",
-        "schema": {"fields": [{"name": k, "type": FIELD_TYPES.get(k, "string"), "description": d} for k, d in fields_],
+        "schema": {"fields": [{"name": k, "type": FIELD_TYPES.get(k, "string"), **({"format": FIELD_FORMATS[k]} if k in FIELD_FORMATS else {}),
+                               "description": d} for k, d in fields_],
                    "missingValues": [""]}}
     pkg = {"name": "ossian-bandi", "title": "Bandi di gara aperti sulla piattaforma ANAC di pubblicità legale",
            "description": f"Estratto non ufficiale, aggiornato ogni 4 ore: fa fede l'avviso ANAC. Campi e limiti: {BASE}/dati.html",
