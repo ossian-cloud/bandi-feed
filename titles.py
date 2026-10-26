@@ -159,8 +159,11 @@ def short_ente(ente):
 BUYER = re.compile(r"^comune di ([^()\-–:.,]{2,40}?)\s*(\([A-Z]{2}\))?\s*[-–:.]\s*", re.I)
 
 
-def notice_title(oggetto, ente, place="", limit=78):
-    """'{object} - {ente}, {place}', within about limit characters; the object gives way first.
+def notice_title(oggetto, ente, place="", limit=84, room=64):
+    """'{object} - {ente}, {place}': the object first, up to room characters, then the ente with its place, the ente
+    alone or the place alone, whichever first keeps the whole within limit; otherwise the object alone. A search
+    result shows about 60 characters and people search for what is bought, so the object must not give way
+    (it got 30-45 characters before 2026-10-26). The ente is in the description and the page anyway.
     A central purchasing body buying for a town usually starts the object with 'COMUNE DI X -': then the
     town is the more useful name."""
     who = short_ente(ente)
@@ -169,14 +172,17 @@ def notice_title(oggetto, ente, place="", limit=78):
     if m and not who.lower().startswith("comune"):
         who, oggetto, ente = name_case("COMUNE DI " + m.group(1).upper()), core_object(oggetto, ente)[m.end():], ""
     place = place if place and place.lower() not in who.lower() else ""
-    room = 40 if not place else max(22, 46 - len(place))
-    if len(who) > room:
-        who = cut(who, room)
-    if place:
-        who += ", " + place
-    obj = sentence_case(core_object(oggetto, ente))
-    room = max(40, limit - len(who) - 3)
-    return f"{cut(obj, room)} - {who}"
+    who = cut(who, 40)
+    full = sentence_case(core_object(oggetto, ente))
+    obj = cut(full, room)
+    for tail in (place and f"{who}, {place}", who, place):
+        if tail and len(obj) + 3 + len(tail) <= limit:
+            return f"{obj} - {tail}"
+    # Suppliers search by place too: keep it, or a short ente (most name their town), by shortening the object a little.
+    for tail in (place, who):
+        if tail and limit - 3 - len(tail) >= 46:
+            return f"{cut(full, limit - 3 - len(tail))} - {tail}"
+    return obj
 
 
 _ACC = {"a": "à", "e": "è", "i": "ì", "o": "ò", "u": "ù"}
