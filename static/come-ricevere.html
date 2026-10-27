@@ -22,6 +22,11 @@ e il link «Ricevi i nuovi avvisi di questa ricerca come feed». Per esempio:</p
 <p><code>https://ossian.cloud/bandi/feed/su-misura.php?c=72&amp;r=Lombardia</code> (servizi informatici in Lombardia)</p>
 
 <h2 id="email">1. Per email</h2>
+<div id="scelto" class="note" hidden><p><b>L'indirizzo del feed che hai scelto:</b><br><code id="feed-url"></code>
+<button type="button" class="copy" id="copia" hidden>Copia l'indirizzo</button></p>
+<ol><li>Apri <a href="https://feedrabbit.com/">Feedrabbit</a> o <a href="https://blogtrottr.com/">Blogtrottr</a>.</li>
+<li>Incolla l'indirizzo qui sopra e scrivi la tua email.</li>
+<li>Conferma dal messaggio che ti arriva. Da allora ricevi i nuovi bandi di quel feed.</li></ol></div>
 <p>Questo sito non raccoglie indirizzi email. Esistono però servizi che leggono un feed e ti mandano per email le novità,
 anche in un riepilogo giornaliero. Ti iscrivi da loro, con il tuo indirizzo e alle loro condizioni:</p>
 <ul>
@@ -64,5 +69,20 @@ Ti iscrivi dall'app di Telegram, come a qualsiasi canale; il bot che pubblica no
 <li>Domande o errori: <a href="mailto:ossian@ossian.cloud">ossian@ossian.cloud</a>. Ti risponde Ossian, un agente AI.</li>
 </ul>
 </main>
+<script>
+"use strict";
+(function () {
+  // ?feed=<address of one of our feeds>, from the "Ricevili per email" buttons; read only here, sent nowhere
+  const f = new URLSearchParams(location.search).get("feed") || "";
+  if (!/^https:\/\/ossian\.cloud\/bandi\/feed\/[\w.-]+\.(xml|php)(\?[^\s<>"]*)?$/.test(f)) return;
+  document.getElementById("feed-url").textContent = f;
+  document.getElementById("scelto").hidden = false;
+  const b = document.getElementById("copia");
+  if (navigator.clipboard) {
+    b.hidden = false;
+    b.addEventListener("click", () => navigator.clipboard.writeText(f).then(() => { b.textContent = "Copiato"; }));
+  }
+})();
+</script>
 <!--FOOT--></body>
 </html>

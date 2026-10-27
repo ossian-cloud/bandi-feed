@@ -125,6 +125,22 @@ def soa(lot):
     return "SOA " + ", ".join(cats) if cats else None
 
 
+# A contract reserved to social cooperatives / sheltered workshops (art. 61 d.lgs. 36/2023), as the object says:
+# the strongest signal for a cooperative, and otherwise visible only deep in the title.
+RESERVED = re.compile(r"riservat[oa]\b[^.;]{0,40}?(cooperativ|art\.?\s*61|operatori economici|imprese sociali|laboratori protetti)"
+                      r"|\bart\.?\s*61\b[^.;]{0,15}d\.?\s*lgs\.?[^.;]{0,8}36\b|cooperative sociali di tipo b", re.I)
+
+
+def reserved(n):
+    return bool(RESERVED.search(" ".join([n["oggetto"] or ""] + [l["descrizione"] or "" for l in n["lotti"]])))
+
+
+def short_object(n):
+    """The object without codes and procedural boilerplate, for lists and feed titles (pages keep it whole)."""
+    ente = "; ".join(x["nome"] or "" for x in n["ente"])
+    return titles.sentence_case(titles.core_object(n["oggetto"] or "", ente))
+
+
 def entry(n):
     e = html.escape
     flags = []
@@ -132,12 +148,16 @@ def entry(n):
         flags.append("Rettifica")
     if n["lotti"] and all(l["annullato"] for l in n["lotti"]):
         flags.append("Annullato")
+    if reserved(n):
+        flags.append("Riservato")
     prefix = "".join(f"[{f}] " for f in flags)
     ente = "; ".join(x["nome"] or "" for x in n["ente"]) or "Ente non indicato"
     places = sorted({f"{l['comune'].title()}" + (f" ({l['regione']})" if l["regione"] else "")
                      for l in n["lotti"] if l["comune"]})
     total = sum(l["valore"] or 0 for l in n["lotti"])
-    rows = [("Tipo", n["tipo_label"]), ("Ente", ente), ("Procedura", n["procedura"]),
+    obj = short_object(n)
+    full = " ".join((n["oggetto"] or "").split())
+    rows = [("Oggetto", full if obj != full else None), ("Tipo", n["tipo_label"]), ("Ente", ente), ("Procedura", n["procedura"]),
             ("Scadenza", day(n["scadenza"])), ("Valore stimato", euro(total) if total else None),
             ("Luogo", ", ".join(places) or None)]
     parts = ["<ul>"] + [f"<li><b>{k}:</b> {e(v)}</li>" for k, v in rows if v] + ["</ul>"]
@@ -163,7 +183,7 @@ def entry(n):
     cats += [("natura:" + slug(x), x) for x in sorted({l["natura"] for l in n["lotti"] if l["natura"]})]
     cats += [("regione:" + slug(x), x) for x in sorted({l["regione"] for l in n["lotti"] if l["regione"]})]
     pub = n["pubblicato"].replace(".000+00:00", "Z").replace("+00:00", "Z")
-    return {"id": f"tag:ossian.cloud,2026:bandi/{n['id']}", "title": prefix + short(n["oggetto"], 150) + (f" · scade {day(n['scadenza'])}" if n["scadenza"] else ""),
+    return {"id": f"tag:ossian.cloud,2026:bandi/{n['id']}", "title": prefix + short(obj, 150) + (f" · scade {day(n['scadenza'])}" if n["scadenza"] else ""),
             "link": n["link"], "published": pub, "updated": pub, "summary_html": "".join(parts),
             "categories": cats}
 
@@ -350,6 +370,7 @@ def write_notice_pages(outdir, notices, now):
         else:
             status = ""
         rows = [("Oggetto", n["oggetto"] if len(n["oggetto"] or "") > 250 else None), ("Tipo", n["tipo_label"] + (" (rettifica di un avviso precedente)" if n["rettifica"] else "")),
+                ("Appalto riservato", "Sì, secondo l'oggetto (per esempio a cooperative sociali, art. 61 d.lgs. 36/2023): chi può partecipare lo dice il bando." if reserved(n) else None),
                 ("Ente", ente), ("Procedura", n["procedura"]),
                 ("Pubblicato", day(n["pubblicato"]) if n["pubblicato"] else None),  # PVL gives a date only; its time is a placeholder
                 ("Scadenza", when(n["scadenza"]) if n["scadenza"] else "non indicata"),
@@ -554,6 +575,7 @@ LOT_FIELDS = [  # (column, description) for dati/lotti-aperti.csv
 ]
 # Changes to the CSV columns, newest first, shown on dati.html. Rule: never rename or remove a column; add new ones at the end.
 CSV_CHANGES = [
+    ("2026-10-27", "<code>scadenza</code>: quando l'avviso non ha una scadenza generale ma i lotti sì, la più lontana tra quelle dei lotti (prima restava vuota: 52 avvisi su 80). Una data senza ora vale fino alle 23:59. Nessuna colonna cambiata."),
     ("2026-10-25", "<code>datapackage.json</code>: <code>scadenza</code> ha ora il tipo data e ora (formato <code>%Y-%m-%dT%H:%M</code>, ora di Roma). Nessuna colonna cambiata."),
     ("2026-10-23", "<code>oggetto</code>: quando la descrizione è solo un rimando ai documenti di gara, il titolo dell'avviso. Descrizioni dei campi più precise (codici CFAVCP, CIG mancanti, arrotondamenti). Nessuna colonna cambiata."),
     ("2026-10-22", "Primi file: <code>avvisi-aperti.csv</code> e <code>lotti-aperti.csv</code>."),
@@ -714,7 +736,7 @@ def write_custom(outdir, notices, now):
         if expired(n, now):
             continue
         lots = n["lotti"]
-        text = [n["oggetto"], "; ".join(x["nome"] or "" for x in n["ente"]), n["tipo_label"]]
+        text = [n["oggetto"], "; ".join(x["nome"] or "" for x in n["ente"]), n["tipo_label"], "riservato" if reserved(n) else ""]
         for l in lots:
             text += [l["descrizione"], l["cpv"]] + [c for c in l.get("categorie", []) if re.match(r"O[GS] ", c)]
         rows.append({"r": sorted({l["regione"] for l in lots if l["regione"]}),
@@ -777,8 +799,9 @@ def notice_items(items, limit=None):
         meta = [("scade " + day(n["scadenza"])) if n["scadenza"] else "senza scadenza indicata",
                 "; ".join(x["nome"] or "" for x in n["ente"]), n["tipo_label"], nat,
                 euro(total) if total else None]
-        lis.append(f'<li><a href="{e(href(n, 1))}">{e(titles.cut(titles.sentence_case(" ".join((n["oggetto"] or "").split())), 180))}</a>'
+        lis.append(f'<li><a href="{e(href(n, 1))}">{e(titles.cut(short_object(n), 180))}</a>'
                    + (' <span class="tag">rettifica</span>' if n["rettifica"] else "")
+                   + (' <span class="tag">riservato</span>' if reserved(n) else "")
                    + f'<small>{e(" · ".join(m for m in meta if m))}</small></li>')
     return lis
 
@@ -815,6 +838,12 @@ def canonical(rel):
     return f"{BASE}/{rel[:-len('index.html')] if rel.endswith('index.html') else rel}"
 
 
+def mail_pill(feed, depth=1):
+    """A pill to come-ricevere.html#email with this feed's address ready to copy, for people who don't use feeds."""
+    url = urllib.parse.quote(f"{BASE}/{feed}", safe="")
+    return f'<a class="pill" href="{"../" * depth}come-ricevere.html?feed={url}#email"><span aria-hidden="true">✉️</span> Ricevili per email</a>'
+
+
 def emit_page(outdir, rel, title, description, body, active="", depth=0, extra_head="", before_main=""):
     layout.write(os.path.join(outdir, rel),
                  layout.page(title, description, body, active, depth, extra_head, before_main, SOURCE, DISCLAIMER,
@@ -836,6 +865,7 @@ def write_province_pages(outdir, notices, now, provinces):
 <p class="lead">{len(items)} avvisi con scadenza non ancora passata, dalla scadenza più vicina. Aggiornato il {stamp(now)}.</p>
 <div class="actions"><a class="pill" href="../calendario/prov-{s}.ics"><span aria-hidden="true">📅</span> Calendario delle scadenze</a>
 <a class="pill" href="../feed/prov-{s}.xml"><span aria-hidden="true">📡</span> Feed della provincia</a>
+{mail_pill(f"feed/prov-{s}.xml")}
 <a class="pill" href="../cerca.html#{q}"><span aria-hidden="true">🔎</span> Cerca in {e(name)}</a>
 <a class="pill" href="../come-ricevere.html">Come si usano?</a></div>
 {items_html(items)}"""
@@ -874,6 +904,7 @@ def write_sector_pages(outdir, notices, now):
 <h1>Bandi {e(SECTOR_SHORT[d])} in {e(reg)}</h1>
 <p class="lead">{len(items)} avvisi aperti in {e(reg)} con almeno un lotto nella divisione CPV {d} ({e(CPV_DIVISIONS[d])}), dalla scadenza più vicina. Aggiornato il {stamp(now)}.</p>
 <div class="actions"><a class="pill" href="../feed/su-misura.php?{q}"><span aria-hidden="true">📡</span> Feed di questi bandi</a>
+{mail_pill("feed/su-misura.php?" + urllib.parse.urlencode({"r": reg, "c": d}))}
 <a class="pill" href="../cerca.html#{q}"><span aria-hidden="true">🔎</span> Cerca per provincia o parola</a>
 <a class="pill" href="../regione/{slug(reg)}.html">Tutti i bandi in {e(reg)}</a>
 <a class="pill" href="{d}.html">Il settore in tutta Italia</a></div>
@@ -900,6 +931,7 @@ def write_sector_pages(outdir, notices, now):
 <h1>Bandi aperti: {e(label)}</h1>
 <p class="lead">{len(items)} avvisi con almeno un lotto nella divisione CPV {d}, con scadenza non ancora passata, dalla scadenza più vicina. Aggiornato il {stamp(now)}.</p>
 <div class="actions"><a class="pill" href="../feed/settore-{d}.xml"><span aria-hidden="true">📡</span> Feed del settore</a>
+{mail_pill(f"feed/settore-{d}.xml")}
 <a class="pill" href="../cerca.html#c={d}"><span aria-hidden="true">🔎</span> Cerca nel settore, per regione o parola</a>
 <a class="pill" href="../feed/su-misura.php?c={d}">Feed su misura (aggiungi regione o parola)</a>
 <a class="pill" href="../come-ricevere.html">Come si usano?</a></div>
@@ -959,6 +991,7 @@ def write_region_pages(outdir, notices, now, provinces):
 <p class="lead">Avvisi con scadenza non ancora passata, per provincia, dalla scadenza più vicina. Aggiornato il {stamp(now)}.</p>
 <div class="actions"><a class="pill" href="../calendario/{s}.ics"><span aria-hidden="true">📅</span> Calendario della regione</a>
 <a class="pill" href="../feed/{s}.xml"><span aria-hidden="true">📡</span> Feed della regione</a>
+{mail_pill(f"feed/{s}.xml")}
 <a class="pill" href="../cerca.html#r={e(urllib.parse.quote(reg))}"><span aria-hidden="true">🔎</span> Cerca in {e(reg)}</a>
 {tg}<a class="pill" href="../come-ricevere.html">Come si usano?</a></div>
 {('<nav class="panel" aria-label="Province"><b>Vai alla provincia:</b><div class="actions">' + "".join(jump) + "</div></nav>") if len(jump) > 1 else ""}
