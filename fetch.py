@@ -116,6 +116,9 @@ def slim(item, template):
             "prov": pv,
             "categorie": [c["codice"] for c in it.get("categorie") or [] if c.get("codice")],
             "annullato": bool(it.get("comunicazione_annullamento_revoca")),
+            # the notice-level dataScadenza is sometimes empty while the lots carry the deadline
+            "termine": it.get("termine_ricezione") or it.get("termine_invito"),
+            "criterio": it.get("criteri_aggiudicazione"),
         })
     return {
         "id": item["idAvviso"],

@@ -35,17 +35,18 @@ $get = function (string $k): string {
     if (!mb_check_encoding($s, 'UTF-8')) fail(400, 'Testo non valido (UTF-8).');
     return trim(preg_replace('/[\x{0}-\x{1F}\x{7F}\x{FFFE}\x{FFFF}]/u', ' ', $s));
 };
-$r = $get('r'); $p = $get('p'); $n = $get('n'); $c = $get('c'); $q = $get('q'); $v = $get('v');
+$r = $get('r'); $p = $get('p'); $n = $get('n'); $c = $get('c'); $q = $get('q'); $v = $get('v'); $m = $get('m');
 // cheap checks first: everything below needs the 8 MB file
 if ($n !== '' && !in_array($n, ['Lavori', 'Servizi', 'Forniture'], true)) fail(400, 'Tipo non valido.');
 if ($c !== '' && !preg_match('/^\d\d$/', $c)) fail(400, 'Settore CPV non valido: usa le prime due cifre, per esempio 72.');
 if (mb_strlen($r) > 40 || mb_strlen($p) > 60 || mb_strlen($q) > 120) fail(400, 'Parametro troppo lungo.');
 if ($v !== '' && !preg_match('/^\d{1,12}([.,]\d*)?$/', $v)) fail(400, 'Importo non valido: solo cifre, in euro.');
+if ($m !== '' && !preg_match('/^\d{1,12}([.,]\d*)?$/', $m)) fail(400, 'Importo non valido: solo cifre, in euro.');
 
 $file = __DIR__ . '/su-misura.json.gz';  // gzipped: plain, the two tools' files took 16 MB of the 100 MB hosting (15 Oct)
 $mtime = @filemtime($file);
 if ($mtime === false) fail(503, 'Dati non disponibili, riprova più tardi.');
-$etag = '"' . $mtime . '-' . (int)@filemtime(__FILE__) . '-' . md5(implode("\0", [$r, $p, $n, $c, $q, $v])) . '"';
+$etag = '"' . $mtime . '-' . (int)@filemtime(__FILE__) . '-' . md5(implode("\0", [$r, $p, $n, $c, $q, $v, $m])) . '"';
 header('ETag: ' . $etag);
 header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
 header('Cache-Control: public, max-age=1800');
@@ -60,6 +61,7 @@ if (!is_array($D)) fail(503, 'Dati non disponibili, riprova più tardi.');
 if ($r !== '' && !in_array($r, $D['regions'], true)) fail(400, 'Regione non valida.');
 if ($c !== '' && !isset($D['sectors'][$c])) fail(400, 'Settore CPV non valido: usa le prime due cifre, per esempio 72.');
 $vmin = $v === '' ? 0 : (int)$v;  // decimals are dropped
+$vmax = $m === '' ? 0 : (int)$m;  // notices with no amount stay in
 
 // words, as on the search page: SOA categories ("OG 3", "os12-a") are one token matched exactly, other words are substrings
 $fq = fold($q);
@@ -68,20 +70,22 @@ $fq = preg_replace_callback('/\bo([gs])\s*(\d+)(-[a-z]+)?\b/u', function ($m) us
     $soa[] = '/(^|[^a-z0-9])o' . $m[1] . ' ' . $m[2] . (isset($m[3]) && $m[3] !== '' ? preg_quote($m[3], '/') : '(-[a-z]+)?') . '(?![0-9a-z-])/u';
     return ' ';
 }, $fq);
-$words = preg_split('/\s+/u', $fq, -1, PREG_SPLIT_NO_EMPTY);
+// a word of 5+ letters loses its last vowel, so "pulizie" also finds "pulizia" (same rule in cerca.html)
+$words = array_map(fn($w) => preg_match('/^[a-z]{4,}[aeiou]$/', $w) ? substr($w, 0, -1) : $w,
+                  preg_split('/\s+/u', $fq, -1, PREG_SPLIT_NO_EMPTY));
 
 $out = [];
 foreach ($D['rows'] as $row) {
     if (($r !== '' && !in_array($r, $row['r'], true)) || ($p !== '' && !in_array($p, $row['p'], true))
         || ($n !== '' && !in_array($n, $row['n'], true)) || ($c !== '' && !in_array($c, $row['c'], true))
-        || $row['v'] < $vmin) continue;
+        || $row['v'] < $vmin || ($vmax > 0 && $row['v'] > $vmax)) continue;
     foreach ($words as $w) if (!str_contains($row['t'], $w)) continue 2;
     foreach ($soa as $re) if (!preg_match($re, $row['t'])) continue 2;
     $out[] = $row['x'];
     if (count($out) >= MAX_ENTRIES) break;
 }
 
-$params = array_filter(['r' => $r, 'p' => $p, 'n' => $n, 'c' => $c, 'q' => $q, 'v' => $v], fn($s) => $s !== '');
+$params = array_filter(['r' => $r, 'p' => $p, 'n' => $n, 'c' => $c, 'q' => $q, 'v' => $v, 'm' => $m], fn($s) => $s !== '');
 ksort($params);
 $qs = http_build_query($params, '', '&', PHP_QUERY_RFC3986);
 $self = $D['base'] . '/feed/su-misura.php' . ($qs !== '' ? '?' . $qs : '');
@@ -92,6 +96,7 @@ if ($n !== '') $label[] = $n;
 if ($c !== '') $label[] = "settore CPV $c";
 if ($q !== '') $label[] = "«{$q}»";
 if ($vmin > 0) $label[] = 'da ' . number_format($vmin, 0, ',', '.') . ' €';
+if ($vmax > 0) $label[] = 'fino a ' . number_format($vmax, 0, ',', '.') . ' €';
 $title = 'Bandi pubblici · ' . ($label ? implode(' · ', $label) : 'Tutta Italia');
 
 header('Content-Type: application/atom+xml; charset=utf-8');

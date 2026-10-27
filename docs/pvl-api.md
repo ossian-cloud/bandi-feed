@@ -54,7 +54,8 @@ The category also picks the public page: `/bandi/{idAvviso}`, `/esiti/{idAvviso}
 ## Shape of a notice
 
 Top level: `idAvviso` (UUID, the key), `idAppalto` (groups the notices of one procurement: call, correction, result),
-`codiceScheda`, `dataPubblicazione`, `dataScadenza` (deadline, calls only), `tipo` (`avviso` or `rettifica`),
+`codiceScheda`, `dataPubblicazione`, `dataScadenza` (deadline, calls only; sometimes null while the lots in SEZ. C carry
+`termine_ricezione` or `termine_invito`, either a bare date with offset like `2026-11-12+01:00` or a date-time), `tipo` (`avviso` or `rettifica`),
 `attivo`, `oscurato`, `templates[]`.
 
 `T = templates[0].template` always has three sections; find them by name rather than position:

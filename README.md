@@ -22,7 +22,10 @@ connection with ANAC.
 - `build.py` writes one feed for all of Italy, one per type of contract, one per region and one per
   region and type, one per province, one per SOA category and one per CPV division (sector), plus an HTML index page and one page
   per region, per province, per sector and per sector in each region (from 3 open notices; indexed from 5)
-  of open notices by deadline. Every entry links to the official notice and carries the source and licence.
+  of open notices by deadline. Feeds carry only notices whose deadline hasn't passed, and each entry title ends
+  with the deadline. Every entry links to the official notice and carries the source and licence.
+  When a notice has no `dataScadenza` but its lots have a `termine_ricezione`/`termine_invito`, the latest lot
+  deadline is used (a bare date counts as the end of that day, Italian time).
 - `titles.py` makes page titles readable: it drops the procedural boilerplate in front of the real object
   ("Procedura aperta ai sensi dell'art. 71 ... per l'affidamento del") and fixes ALL-CAPS text. It only
   removes and re-cases the official words, never adds any; the page heading keeps the full object.
@@ -40,7 +43,9 @@ connection with ANAC.
   all 6,367 labelled lots matched exactly one code. Entries show the code, and the search page can filter by division.
 - It writes `feed/su-misura.json.gz` (every notice with its filter fields and its ready-made Atom entry) for
   `static/su-misura.php`, which serves a feed for any combination of the search filters
-  (`?r=Regione&p=Provincia&n=Servizi&c=72&q=parole&v=100000`). It reads only the query string and stores nothing.
+  (`?r=Regione&p=Provincia&n=Servizi&c=72&q=parole&v=100000&m=619200`: `v` minimum and `m` maximum amount in euro;
+  notices with no amount pass `m`). Words of 5+ letters lose their last vowel, so `pulizie` also finds `pulizia`.
+  It reads only the query string and stores nothing.
   The search page links to the feed of the current search.
 - One page per open procedure (and closed ones for 14 days, `noindex`) at `avviso/<id>.html`. The hosting caps
   the number of files, so the pages are stored in 16 gzipped JSON shards (`avviso/data/<hex>.json.gz`) and served

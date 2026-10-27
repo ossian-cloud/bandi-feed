@@ -163,7 +163,7 @@ def entry(n):
     cats += [("natura:" + slug(x), x) for x in sorted({l["natura"] for l in n["lotti"] if l["natura"]})]
     cats += [("regione:" + slug(x), x) for x in sorted({l["regione"] for l in n["lotti"] if l["regione"]})]
     pub = n["pubblicato"].replace(".000+00:00", "Z").replace("+00:00", "Z")
-    return {"id": f"tag:ossian.cloud,2026:bandi/{n['id']}", "title": prefix + short(n["oggetto"], 220),
+    return {"id": f"tag:ossian.cloud,2026:bandi/{n['id']}", "title": prefix + short(n["oggetto"], 150) + (f" · scade {day(n['scadenza'])}" if n["scadenza"] else ""),
             "link": n["link"], "published": pub, "updated": pub, "summary_html": "".join(parts),
             "categories": cats}
 
@@ -182,6 +182,28 @@ def clean(n):
         # meant as 23:59 Italian time on that date; reading it as UTC would move it past midnight
         local = dt.datetime.fromisoformat(s[:16]).replace(tzinfo=ROME)
         n["scadenza"] = local.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000+00:00")
+    if not n["scadenza"]:
+        n["scadenza"] = lot_deadline(n)
+
+
+def lot_deadline(n):
+    """The latest lot deadline (termine_ricezione/termine_invito), for notices whose own dataScadenza is empty.
+    A bare date ("2026-11-12+01:00") has no time: read it as the end of that day in Italy, so it never closes early."""
+    out = []
+    for l in n["lotti"]:
+        t = l.get("termine")
+        if not t:
+            continue
+        if len(t) >= 19 and t[10] == "T":
+            d = dt.datetime.fromisoformat(t.replace("Z", "+00:00"))
+        else:
+            d = dt.datetime.fromisoformat(t[:10] + "T23:59").replace(tzinfo=ROME)
+        out.append(d.astimezone(dt.timezone.utc))
+    return max(out).strftime("%Y-%m-%dT%H:%M:%S.000+00:00") if out else None
+
+
+def expired(n, now):
+    return bool(n["scadenza"]) and n["scadenza"][:19] < now[:19]
 
 
 def personal(n):
@@ -210,11 +232,14 @@ def main(outdir):
                    rights=RIGHTS, entries=[entry(n) for n in items])
         feeds.append((name, title, len(items)))
 
-    emit("tutti", "Tutta Italia", notices, TUTTI_MAX)
+    # Feeds carry only notices still open: a new subscriber would otherwise start with a backlog of closed
+    # tenders, and a rettifica published after its procedure closed would arrive as news.
+    live = [n for n in notices if not expired(n, now)]
+    emit("tutti", "Tutta Italia", live, TUTTI_MAX)
     for nat in NATURE:
-        emit(slug(nat), nat, [n for n in notices if any(l["natura"] == nat for l in n["lotti"])])
+        emit(slug(nat), nat, [n for n in live if any(l["natura"] == nat for l in n["lotti"])])
     for reg in REGIONS:
-        in_reg = [n for n in notices if any(l["regione"] == reg for l in n["lotti"])]
+        in_reg = [n for n in live if any(l["regione"] == reg for l in n["lotti"])]
         emit(slug(reg), reg, in_reg)
         for nat in NATURE:
             emit(f"{slug(reg)}-{slug(nat)}", f"{reg} · {nat}",
@@ -226,21 +251,21 @@ def main(outdir):
         provinces[r].sort()
         for pv in provinces[r]:
             emit("prov-" + slug(pv), f"Provincia di {pv}" if pv != "Valle d'Aosta" else pv,
-                 [n for n in notices if any(l.get("prov") == pv for l in n["lotti"])])
+                 [n for n in live if any(l.get("prov") == pv for l in n["lotti"])])
     labels = json.load(open(CATS)) if os.path.exists(CATS) else {}
     soa = sorted((c for c in labels if re.match(r"O[GS] \d", c)),
                  key=lambda c: (c[:2], int(re.search(r"\d+", c).group()), c))
     soa_counts = {}
     for c in soa:
-        items = [n for n in notices if any(c in l.get("categorie", []) for l in n["lotti"])]
+        items = [n for n in live if any(c in l.get("categorie", []) for l in n["lotti"])]
         soa_counts[c] = len(items)
         emit("soa-" + slug(c), f"Lavori, categoria {c}", items)
-    unmapped = {l["cpv"] for n in notices for l in n["lotti"] if l.get("cpv") and l["cpv"] not in CPV_CODE}
+    unmapped = {l["cpv"] for n in live for l in n["lotti"] if l.get("cpv") and l["cpv"] not in CPV_CODE}
     if unmapped:
         print(f"warning: {len(unmapped)} CPV labels without a code, e.g. {sorted(unmapped)[:3]}", file=sys.stderr)
     sector_counts = {}
     for d in sorted(CPV_DIVISIONS):
-        items = [n for n in notices if d in divisions(n)]
+        items = [n for n in live if d in divisions(n)]
         sector_counts[d] = len(items)
         emit("settore-" + d, f"Settore CPV {d}: {short(CPV_DIVISIONS[d], 80)}", items)
     indexable = write_notice_pages(outdir, notices, now)
@@ -367,7 +392,7 @@ def write_notice_pages(outdir, notices, now):
             crumb = [(f"regione/{slug(regs[0])}.html", regs[0])] + crumb
         body = f"""{layout.crumbs(crumb, 1)}
 <h1 class="long">{e(titles.cut(titles.sentence_case(" ".join(n["oggetto"].split())), 250) if n["oggetto"] else "Avviso senza oggetto")}</h1>
-<p class="lead">{e(n["tipo_label"])} di {e(ente)}{f" · scadenza {when(n['scadenza'])}" if n["scadenza"] and not expired else ""}</p>
+<p class="lead">{e(n["tipo_label"])} di {e(ente)}{f" · scadenza {when(n['scadenza'])}" if n["scadenza"] and not expired else ""}{f" · valore stimato {euro(total)}" if total else ""}</p>
 {status}
 <div class="cta">{" ".join(links)}</div>
 <div class="table"><table class="facts"><tbody>
@@ -686,8 +711,10 @@ def write_custom(outdir, notices, now):
     One row per notice, newest first, with the filter fields and the ready-made <entry>."""
     rows = []
     for n in notices:
+        if expired(n, now):
+            continue
         lots = n["lotti"]
-        text = [n["oggetto"], "; ".join(x["nome"] or "" for x in n["ente"])]
+        text = [n["oggetto"], "; ".join(x["nome"] or "" for x in n["ente"]), n["tipo_label"]]
         for l in lots:
             text += [l["descrizione"], l["cpv"]] + [c for c in l.get("categorie", []) if re.match(r"O[GS] ", c)]
         rows.append({"r": sorted({l["regione"] for l in lots if l["regione"]}),
@@ -968,7 +995,7 @@ def write_pages(outdir, notices, now, provinces, soa, sector_counts, nfeeds, nca
 <p>I nuovi bandi di gara italiani della tua zona e del tuo settore, gratis: nel calendario, per email, in un lettore di feed o con una ricerca.
 Nessuna iscrizione.</p>
 <div class="cta"><a class="btn" href="cerca.html">Cerca un bando</a><a class="btn ghost" href="#ricevi">Ricevi i nuovi bandi</a></div>
-<p class="meta">Dati della piattaforma ANAC di pubblicità legale · aggiornato il {stamp(now)}</p></div>
+<p class="meta">Estratto non ufficiale dei dati della piattaforma ANAC di pubblicità legale, fatto da Ossian, un agente AI · aggiornato il {stamp(now)}</p></div>
 </div></section>"""
     regions = "\n".join(f'<li><a href="regione/{slug(r)}.html">{e(r)}</a><small>{by_reg.get(r, 0)}</small></li>' for r in REGIONS)
     body = f"""<div class="stats">
@@ -1066,7 +1093,7 @@ openHash(); addEventListener("hashchange", openHash);</script>"""
 <h1>I feed</h1>
 <p class="lead">Un feed è un indirizzo che un'app (lettore di feed, servizio email, Thunderbird…) controlla da sola: quando esce un nuovo bando, te lo mostra.
 Copia il link del feed che ti interessa e incollalo nella tua app. <a href="come-ricevere.html">Come si fa, passo per passo</a>.</p>
-<p class="small">Ogni feed contiene gli avvisi degli ultimi 30 giorni (al massimo {MAX_ENTRIES}) e si aggiorna più volte al giorno.</p>
+<p class="small">Ogni feed contiene gli avvisi degli ultimi 30 giorni con la scadenza non ancora passata (al massimo {MAX_ENTRIES}) e si aggiorna più volte al giorno. Il titolo di ogni avviso finisce con la scadenza.</p>
 
 <h2>Tutta Italia</h2>
 <div class="actions"><a class="pill" href="feed/tutti.xml"><span aria-hidden="true">📡</span> Tutti i bandi (ultimi {TUTTI_MAX})</a><a class="pill" href="feed/lavori.xml">Lavori</a><a class="pill" href="feed/servizi.xml">Servizi</a><a class="pill" href="feed/forniture.xml">Forniture</a></div>
@@ -1151,10 +1178,10 @@ La piattaforma è consultabile, ma non offre feed né avvisi. Questo sito li ric
 <ul>
 <li>Bandi di gara, avvisi di preinformazione indittivi, indagini di mercato ed elenchi di operatori economici: le occasioni ancora aperte a cui un'impresa può partecipare. Esiti e affidamenti diretti non sono inclusi.</li>
 <li>Compaiono solo le procedure che hanno un bando o un avviso pubblico sulla piattaforma ANAC. Gli affidamenti diretti e le procedure negoziate senza bando, che la legge consente sotto certe soglie, non passano da qui (a volte l'ente le annuncia solo sul proprio sito). Gli avvisi che ANAC disattiva (per esempio perché sostituiti o revocati) spariscono dalle pagine entro un giorno.</li>
-<li>Per ogni avviso: oggetto, ente, procedura, scadenza, valore stimato, luogo, lotti con CIG e categoria, link all'avviso ANAC e ai documenti di gara.</li>
+<li>Per ogni avviso: oggetto, ente, procedura, scadenza, valore stimato, luogo, lotti con CIG e categoria, link all'avviso ANAC e ai documenti di gara. Se l'avviso non ha una scadenza generale ma i lotti sì, vale la più lontana tra quelle dei lotti.</li>
 <li>Ogni procedura ancora aperta ha una sua pagina, con tutti questi dati e i link a bandi simili. La pagina resta {GRACE_DAYS} giorni dopo la scadenza (senza indicizzazione) e poi viene tolta. Se una rettifica corregge un avviso, la pagina mostra la rettifica.</li>
 <li>Tutti gli avvisi aperti, con i loro lotti, sono anche in due file CSV: <a href="dati.html">dati aperti</a>.</li>
-<li>Gli avvisi degli ultimi 30 giorni (massimo {MAX_ENTRIES} per feed). Nessun archivio storico.</li>
+<li>Gli avvisi degli ultimi 30 giorni con la scadenza non ancora passata (massimo {MAX_ENTRIES} per feed). Nessun archivio storico.</li>
 <li>La regione e la provincia sono ricavate dal comune di esecuzione indicato nell'avviso (elenco comuni ISTAT). Un avviso con lotti in più zone compare in ciascuna.</li>
 <li>Aggiornamento automatico ogni 4 ore circa.</li>
 </ul>
