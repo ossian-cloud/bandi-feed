@@ -214,10 +214,14 @@ def lot_deadline(n):
         t = l.get("termine")
         if not t:
             continue
-        if len(t) >= 19 and t[10] == "T":
-            d = dt.datetime.fromisoformat(t.replace("Z", "+00:00"))
-        else:
-            d = dt.datetime.fromisoformat(t[:10] + "T23:59").replace(tzinfo=ROME)
+        try:
+            if len(t) >= 16 and t[10] in "T ":
+                d = dt.datetime.fromisoformat(t.replace("Z", "+00:00"))
+                d = d if d.tzinfo else d.replace(tzinfo=ROME)  # no offset: Italian time
+            else:
+                d = dt.datetime.fromisoformat(t[:10] + "T23:59").replace(tzinfo=ROME)
+        except ValueError:  # an unknown format: no deadline rather than a failed build
+            continue
         out.append(d.astimezone(dt.timezone.utc))
     return max(out).strftime("%Y-%m-%dT%H:%M:%S.000+00:00") if out else None
 
