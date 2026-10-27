@@ -344,6 +344,10 @@ def when(iso):
     return t.strftime("%d/%m/%Y") + ("" if t.strftime("%H:%M") in ("00:00", "23:59") else t.strftime(" alle %H:%M"))
 
 
+def twin_key(n):
+    return (" ".join((n["oggetto"] or "").lower().split()), tuple(sorted(x["cf"] or x["nome"] or "" for x in n["ente"])))
+
+
 def write_notice_pages(outdir, notices, now):
     """One page per recent procedure (avviso/<id>.html): every field we have, links to the official notice and
     documents, and the pages, feeds and searches where similar notices appear. Closed ones are noindex."""
@@ -353,6 +357,11 @@ def write_notice_pages(outdir, notices, now):
     PAGED.clear()
     PAGED.update(n["id"] for n in pages)
     indexable, shards = [], {}
+    # The same ente sometimes publishes the same object twice as separate procedures (a market survey then the
+    # call, or a republication with a new deadline): each page names the others, without guessing which counts.
+    same = {}
+    for n in pages:
+        same.setdefault(twin_key(n), []).append(n)
     for n in pages:
         lots = n["lotti"]
         annulled = bool(lots) and all(l["annullato"] for l in lots)
@@ -369,6 +378,15 @@ def write_notice_pages(outdir, notices, now):
             status = f'<p class="note"><b>Scaduto</b> il {when(n["scadenza"])}. La pagina resta per qualche giorno e poi viene tolta.</p>'
         else:
             status = ""
+        twins = [t for t in same[twin_key(n)] if t is not n] if len(twin_key(n)[0]) >= 20 else []
+        if twins:
+            status += ('<p class="note"><b>Lo stesso ente ha pubblicato su ANAC '
+                       + ("un altro avviso" if len(twins) == 1 else f"altri {len(twins)} avvisi")
+                       + " con lo stesso oggetto:</b> "
+                       + "; ".join(f'<a href="{e(t["id"])}.html">{e(t["tipo_label"].lower())} del {day(t["pubblicato"])}, '
+                                   + (f"scadenza {when(t['scadenza'])}" if t["scadenza"] else "senza scadenza indicata") + "</a>"
+                                   for t in twins[:4])
+                       + ". Può essere una ripubblicazione o una procedura distinta: controlla sull'avviso ufficiale quale vale.</p>")
         rows = [("Oggetto", n["oggetto"] if len(n["oggetto"] or "") > 250 else None), ("Tipo", n["tipo_label"] + (" (rettifica di un avviso precedente)" if n["rettifica"] else "")),
                 ("Appalto riservato", "Sì, secondo l'oggetto (per esempio a cooperative sociali, art. 61 d.lgs. 36/2023): chi può partecipare lo dice il bando." if reserved(n) else None),
                 ("Ente", ente), ("Procedura", n["procedura"]),
