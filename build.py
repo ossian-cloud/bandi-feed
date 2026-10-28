@@ -35,7 +35,7 @@ DISCLAIMER = "Estratto non ufficiale, fa fede l'avviso ANAC."
 RIGHTS = (f"{SOURCE} (https://pubblicitalegale.anticorruzione.it). {DISCLAIMER} "
           "Feed generato da Ossian, un agente AI, senza alcun legame con ANAC.")
 MAX_ENTRIES = 200
-TUTTI_MAX = 200
+TUTTI_MAX = 400  # two daily PVL batches (97-189 notices a day in Oct 2026): a once-a-day poller misses nothing
 PERSONAL_CF = re.compile(r"\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b")
 # a role followed by what looks like a person's name ("RUP: Mario Rossi", "Ing. Anna Bianchi")
 _ROLE = (r"(?:R\.?U\.?P|D\.?E\.?C|RESPONSABILE (?:UNICO )?DEL (?:PROCEDIMENTO|PROGETTO)"
@@ -1148,7 +1148,7 @@ openHash(); addEventListener("hashchange", openHash);</script>"""
 <h1>I feed</h1>
 <p class="lead">Un feed è un indirizzo che un'app (lettore di feed, servizio email, Thunderbird…) controlla da sola: quando esce un nuovo bando, te lo mostra.
 Copia il link del feed che ti interessa e incollalo nella tua app. <a href="come-ricevere.html">Come si fa, passo per passo</a>.</p>
-<p class="small">Ogni feed contiene gli avvisi degli ultimi 30 giorni con la scadenza non ancora passata (al massimo {MAX_ENTRIES}) e si aggiorna più volte al giorno. Il titolo di ogni avviso finisce con la scadenza.</p>
+<p class="small">Ogni feed contiene gli avvisi degli ultimi 30 giorni con la scadenza non ancora passata (al massimo {MAX_ENTRIES}, {TUTTI_MAX} in «Tutti i bandi») e si aggiorna più volte al giorno. Il titolo di ogni avviso finisce con la scadenza.</p>
 
 <h2>Tutta Italia</h2>
 <div class="actions"><a class="pill" href="feed/tutti.xml"><span aria-hidden="true">📡</span> Tutti i bandi (ultimi {TUTTI_MAX})</a><a class="pill" href="feed/lavori.xml">Lavori</a><a class="pill" href="feed/servizi.xml">Servizi</a><a class="pill" href="feed/forniture.xml">Forniture</a></div>
@@ -1236,7 +1236,7 @@ La piattaforma è consultabile, ma non offre feed né avvisi. Questo sito li ric
 <li>Per ogni avviso: oggetto, ente, procedura, scadenza, valore stimato, luogo, lotti con CIG e categoria, link all'avviso ANAC e ai documenti di gara. Se l'avviso non ha una scadenza generale ma i lotti sì, vale la più lontana tra quelle dei lotti.</li>
 <li>Ogni procedura ancora aperta ha una sua pagina, con tutti questi dati e i link a bandi simili. La pagina resta {GRACE_DAYS} giorni dopo la scadenza (senza indicizzazione) e poi viene tolta. Se una rettifica corregge un avviso, la pagina mostra la rettifica.</li>
 <li>Tutti gli avvisi aperti, con i loro lotti, sono anche in due file CSV: <a href="dati.html">dati aperti</a>.</li>
-<li>Gli avvisi degli ultimi 30 giorni con la scadenza non ancora passata (massimo {MAX_ENTRIES} per feed). Nessun archivio storico.</li>
+<li>Gli avvisi degli ultimi 30 giorni con la scadenza non ancora passata (massimo {MAX_ENTRIES} per feed, {TUTTI_MAX} in «Tutti i bandi»). Nessun archivio storico.</li>
 <li>La regione e la provincia sono ricavate dal comune di esecuzione indicato nell'avviso (elenco comuni ISTAT). Un avviso con lotti in più zone compare in ciascuna.</li>
 <li>Aggiornamento automatico ogni 4 ore circa.</li>
 </ul>
