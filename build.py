@@ -978,11 +978,8 @@ con i bandi ancora aperti dalla scadenza più vicina e il feed del settore. Aggi
     return indexable
 
 
-# regional Telegram channels (projects/telegram/channels.json, a pilot since 10-19); none in a plain checkout
-try:
-    TELEGRAM = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "telegram", "channels.json")))
-except (OSError, ValueError):
-    TELEGRAM = {}
+# the regional Telegram channels carried bandi 19 Oct - 1 Nov 2026; since then they carry concorsi (no link here)
+TELEGRAM = {}
 
 
 def write_region_pages(outdir, notices, now, provinces):
