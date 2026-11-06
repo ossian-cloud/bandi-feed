@@ -3,6 +3,7 @@ from ANAC's Pubblicità a Valore Legale platform and keep slim, person-free reco
 
 Usage: python3 fetch.py [--days N]
 Writes data/notices.json (dict idAvviso -> slim record), keeping a rolling window.
+Deactivated notices are dropped, except one whose rettifica is created but not yet public (see awaiting() in main()).
 """
 import argparse
 import datetime as dt
@@ -168,16 +169,31 @@ def main():
         for c in m["codiceScheda"]:
             tmpl_of[c] = m["template"]
 
+    now = dt.datetime.now(dt.timezone.utc)
+
+    def awaiting(it):
+        """A notice ANAC deactivated because a rettifica of it is created but not yet public: the rettifica is listed only
+        from its publication time (07:00 UTC of the next day), so until then the procedure is still open with this
+        notice's data. Kept (with "rettifica_attesa") until the rettifica is stored, or a day after it was due."""
+        due = it.get("dataPubblicazioneNuovoAvviso")
+        if it.get("attivo", True) or not it.get("nuovoAvviso") or it.get("tipoNuovoAvviso") != "rettifica" or not due:
+            return False
+        try:
+            due = dt.datetime.fromisoformat(due.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return it["nuovoAvviso"] not in db and now < due + dt.timedelta(days=1)
+
     today = dt.date.today()
     days = [today - dt.timedelta(days=i) for i in range(args.days)]
-    added = removed = 0
+    added = removed = waiting = 0
     try:
         for day in days:
             items = fetch_day(day, list(GROUPS))
             # a notice that ANAC withdrew, censored or deactivated disappears here too
             seen = {it["idAvviso"] for it in items
                     if tmpl_of.get(it.get("codiceScheda")) in GROUPS and not it.get("oscurato")
-                    and it.get("attivo", True)}
+                    and (it.get("attivo", True) or awaiting(it))}
             gone = [k for k, v in db.items() if (v["pubblicato"] or "")[:10] == day.isoformat() and k not in seen]
             if gone and not items:  # an empty answer for a day we hold notices of: distrust it, keep them
                 print(f"{day}: 0 listed but {len(gone)} stored, keeping them", file=sys.stderr)
@@ -187,13 +203,16 @@ def main():
             removed += len(gone)
             for it in items:
                 t = tmpl_of.get(it.get("codiceScheda"))
-                if t not in GROUPS or it.get("oscurato") or not it.get("attivo", True):
+                if t not in GROUPS or it.get("oscurato") or not (it.get("attivo", True) or awaiting(it)):
                     continue
                 if it["idAvviso"] in blocked:
                     continue
                 if it["idAvviso"] not in db:
                     added += 1
                 db[it["idAvviso"]] = slim(it, t)
+                if not it.get("attivo", True):
+                    db[it["idAvviso"]]["rettifica_attesa"] = it["dataPubblicazioneNuovoAvviso"]
+                    waiting += 1
             if items:
                 print(f"{day}: {len(items)} fetched", file=sys.stderr)
     except Blocked as e:
@@ -204,7 +223,7 @@ def main():
         sys.exit(2)
 
     save(db, blocked)
-    print(f"added {added}, removed {removed}, total {len(db)}", file=sys.stderr)
+    print(f"added {added}, removed {removed}, awaiting a rettifica {waiting}, total {len(db)}", file=sys.stderr)
 
 
 def save(db, blocked):

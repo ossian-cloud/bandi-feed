@@ -72,6 +72,15 @@ def day(iso):
     return iso[8:10] + "/" + iso[5:7] + "/" + iso[0:4]
 
 
+def deadline_day(iso):
+    """Like day(), for a deadline: one at 00:00 Rome ends the day before ("ore 24:00"), so that day is shown."""
+    if iso and len(iso) > 10:
+        t = dt.datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(ROME)
+        if t.strftime("%H:%M") == "00:00":
+            return (t - dt.timedelta(days=1)).strftime("%d/%m/%Y")
+    return day(iso)
+
+
 def load_cpv():
     """(code by label, division labels). PVL gives CPV labels only; a label shared by codes of different
     divisions maps to nothing rather than to a guess."""
@@ -158,7 +167,7 @@ def entry(n):
     obj = short_object(n)
     full = " ".join((n["oggetto"] or "").split())
     rows = [("Oggetto", full if obj != full else None), ("Tipo", n["tipo_label"]), ("Ente", ente), ("Procedura", n["procedura"]),
-            ("Scadenza", day(n["scadenza"])), ("Valore stimato", euro(total) if total else None),
+            ("Scadenza", deadline_day(n["scadenza"])), ("Valore stimato", euro(total) if total else None),
             ("Luogo", ", ".join(places) or None)]
     parts = ["<ul>"] + [f"<li><b>{k}:</b> {e(v)}</li>" for k, v in rows if v] + ["</ul>"]
     if len(n["lotti"]) > 1 or (n["lotti"] and n["lotti"][0]["descrizione"] != n["oggetto"]):
@@ -183,7 +192,7 @@ def entry(n):
     cats += [("natura:" + slug(x), x) for x in sorted({l["natura"] for l in n["lotti"] if l["natura"]})]
     cats += [("regione:" + slug(x), x) for x in sorted({l["regione"] for l in n["lotti"] if l["regione"]})]
     pub = n["pubblicato"].replace(".000+00:00", "Z").replace("+00:00", "Z")
-    return {"id": f"tag:ossian.cloud,2026:bandi/{n['id']}", "title": prefix + short(obj, 150) + (f" · scade {day(n['scadenza'])}" if n["scadenza"] else ""),
+    return {"id": f"tag:ossian.cloud,2026:bandi/{n['id']}", "title": prefix + short(obj, 150) + (f" · scade {deadline_day(n['scadenza'])}" if n["scadenza"] else ""),
             "link": n["link"], "published": pub, "updated": pub, "summary_html": "".join(parts),
             "categories": cats}
 
@@ -198,8 +207,11 @@ def clean(n):
         # ANAC's registry loses "°" in names like "2° REPARTO GENIO": it arrives as "2? REPARTO"
         x["nome"] = re.sub(r"\b(\d+)\? ", "\\1° ", x["nome"]) if x["nome"] else x["nome"]
     s = n["scadenza"]
-    if s and s[10:16] == "T23:59" and s.endswith(("Z", "+00:00")):
-        # meant as 23:59 Italian time on that date; reading it as UTC would move it past midnight
+    if s and s[10:16] == "T23:59" and s.endswith(("Z", "+00:00")) or s and s[10:19] == "T00:00:00" and s.endswith(("Z", "+00:00")):
+        # meant as 23:59 Italian time on that date; reading it as UTC would move it past midnight.
+        # Exactly 00:00:00 UTC is a date with no time (read as UTC it became an invented "alle 01:00"): the end of that
+        # day in Italy, as lot_deadline() reads bare dates.
+        s = s[:10] + "T23:59"
         local = dt.datetime.fromisoformat(s[:16]).replace(tzinfo=ROME)
         n["scadenza"] = local.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000+00:00")
     if not n["scadenza"]:
@@ -344,8 +356,12 @@ def href(n, depth=0):
 
 
 def when(iso):
+    """A deadline in Rome time. 23:59 is shown as the bare date; 00:00 as "alle 24:00" of the day before, because a bare
+    date would read as the whole of a day that has already ended."""
     t = dt.datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(ROME)
-    return t.strftime("%d/%m/%Y") + ("" if t.strftime("%H:%M") in ("00:00", "23:59") else t.strftime(" alle %H:%M"))
+    if t.strftime("%H:%M") == "00:00":
+        return (t - dt.timedelta(days=1)).strftime("%d/%m/%Y") + " alle 24:00"
+    return t.strftime("%d/%m/%Y") + ("" if t.strftime("%H:%M") == "23:59" else t.strftime(" alle %H:%M"))
 
 
 def twin_key(n):
@@ -382,6 +398,10 @@ def write_notice_pages(outdir, notices, now):
             status = f'<p class="note"><b>Scaduto</b> il {when(n["scadenza"])}. La pagina resta per qualche giorno e poi viene tolta.</p>'
         else:
             status = ""
+        if n.get("rettifica_attesa") and not expired:
+            status += ('<p class="note"><b>Rettifica in arrivo.</b> La piattaforma ANAC ha registrato una rettifica di questo avviso, '
+                       f'che diventa pubblica il {day(n["rettifica_attesa"])}: scadenza e altri dati possono cambiare. '
+                       'Qui comparirà al prossimo aggiornamento; intanto controlla l\'avviso ufficiale.</p>')
         twins = [t for t in same[twin_key(n)] if t is not n] if len(twin_key(n)[0]) >= 20 else []
         if twins:
             status += ('<p class="note"><b>Lo stesso ente ha pubblicato su ANAC '
@@ -452,7 +472,7 @@ def write_notice_pages(outdir, notices, now):
         obj = titles.cut(titles.sentence_case(titles.core_object(n["oggetto"] or "", ente)), 70)
         desc = (f"{n['tipo_label']} di {who}" + (f", {place}" if place and place.lower() not in who.lower() else "") + ": "
                 + obj + ("" if obj.endswith(("…", ".")) else ".")
-                + (f" Scadenza {day(n['scadenza'])}." if n["scadenza"] else "")
+                + (f" Scadenza {deadline_day(n['scadenza'])}." if n["scadenza"] else "")
                 + (f" CIG {cigs[0]}" + (f" (+{len(cigs) - 1} lotti)" if len(cigs) > 1 else "") + "." if cigs else ""))
         extra = '\n<meta name="robots" content="noindex">' if annulled or expired else ""
         shards.setdefault(n["id"][0], {})[n["id"]] = layout.page(title, desc, body, "", 1, extra, "", SOURCE, DISCLAIMER,
@@ -597,6 +617,7 @@ LOT_FIELDS = [  # (column, description) for dati/lotti-aperti.csv
 ]
 # Changes to the CSV columns, newest first, shown on dati.html. Rule: never rename or remove a column; add new ones at the end.
 CSV_CHANGES = [
+    ("2026-11-06", "<code>scadenza</code>: una scadenza che la piattaforma scrive come mezzanotte UTC esatta (una data senza ora) diventa le 23:59 di quel giorno, ora di Roma, come le date senza ora dei lotti; prima era un'ora inventata, le 01:00."),
     ("2026-10-27", "<code>scadenza</code>: quando l'avviso non ha una scadenza generale ma i lotti sì, la più lontana tra quelle dei lotti (prima restava vuota: 52 avvisi su 80). Una data senza ora vale fino alle 23:59. Nessuna colonna cambiata."),
     ("2026-10-25", "<code>datapackage.json</code>: <code>scadenza</code> ha ora il tipo data e ora (formato <code>%Y-%m-%dT%H:%M</code>, ora di Roma). Nessuna colonna cambiata."),
     ("2026-10-23", "<code>oggetto</code>: quando la descrizione è solo un rimando ai documenti di gara, il titolo dell'avviso. Descrizioni dei campi più precise (codici CFAVCP, CIG mancanti, arrotondamenti). Nessuna colonna cambiata."),
@@ -818,7 +839,7 @@ def notice_items(items, limit=None):
     for n in items:
         total = sum(l["valore"] or 0 for l in n["lotti"])
         nat = ", ".join(sorted({l["natura"] for l in n["lotti"] if l["natura"]}))
-        meta = [("scade " + day(n["scadenza"])) if n["scadenza"] else "senza scadenza indicata",
+        meta = [("scade " + deadline_day(n["scadenza"])) if n["scadenza"] else "senza scadenza indicata",
                 "; ".join(x["nome"] or "" for x in n["ente"]), n["tipo_label"], nat,
                 euro(total) if total else None]
         lis.append(f'<li><a href="{e(href(n, 1))}">{e(titles.cut(short_object(n), 180))}</a>'
@@ -1093,7 +1114,7 @@ in ritardo o sbagliati: prima di partecipare a una gara controlla sempre l'avvis
 <h2>Ultimi avvisi pubblicati</h2>
 <ul class="items">
 {chr(10).join(f'<li><a href="{e(href(n))}">{e(titles.cut(titles.sentence_case(" ".join((n["oggetto"] or "").split())), 160))}</a><small>{e("; ".join(x["nome"] or "" for x in n["ente"]))} · {e(n["tipo_label"])}'
-              + (f" · scade {day(n['scadenza'])}" if n["scadenza"] else "") + "</small></li>" for n in notices[:8])}
+              + (f" · scade {deadline_day(n['scadenza'])}" if n["scadenza"] else "") + "</small></li>" for n in notices[:8])}
 </ul>
 <p><a href="feed/tutti.xml">Feed di tutta Italia</a> · <a href="cerca.html">tutti i bandi aperti</a> · <a href="dati.html">tutti in un file CSV</a></p>"""
     emit_page(outdir, "index.html", "Bandi di gara aperti: feed, calendari e ricerca gratuiti",
