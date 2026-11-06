@@ -161,7 +161,7 @@ def entry(n):
         flags.append("Riservato")
     prefix = "".join(f"[{f}] " for f in flags)
     ente = "; ".join(x["nome"] or "" for x in n["ente"]) or "Ente non indicato"
-    places = sorted({f"{l['comune'].title()}" + (f" ({l['regione']})" if l["regione"] else "")
+    places = sorted({f"{geo.comune_name(l['comune'])}" + (f" ({l['regione']})" if l["regione"] else "")
                      for l in n["lotti"] if l["comune"]})
     total = sum(l["valore"] or 0 for l in n["lotti"])
     obj = short_object(n)
@@ -390,7 +390,7 @@ def write_notice_pages(outdir, notices, now):
         total = sum(l["valore"] or 0 for l in lots)
         regs = sorted({l["regione"] for l in lots if l["regione"]})
         provs = sorted({(l["regione"], l["prov"]) for l in lots if l.get("prov")})
-        places = sorted({l["comune"].title() for l in lots if l["comune"]})
+        places = sorted({geo.comune_name(l["comune"]) for l in lots if l["comune"]})
         divs = sorted(divisions(n))
         if annulled:
             status = '<p class="note"><b>Annullato.</b> Secondo la piattaforma ANAC tutti i lotti di questa procedura sono stati annullati.</p>'
@@ -429,7 +429,7 @@ def write_notice_pages(outdir, notices, now):
                        else e(l["cpv"]) if l["cpv"] else "")
                 bits = [e(x) for x in [l["natura"], soa(l), euro(l["valore"]) if l["valore"] else None,
                                        f"CIG {l['cig']}" if l["cig"] else None,
-                                       l["comune"].title() if l["comune"] else None,
+                                       geo.comune_name(l["comune"]) if l["comune"] else None,
                                        "annullato" if l["annullato"] else None] if x]
                 text = l["descrizione"] if l["descrizione"] and l["descrizione"] != n["oggetto"] else ""
                 lis.append(f"<li>{e(short(text, 600))}<small>"

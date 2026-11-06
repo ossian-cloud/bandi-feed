@@ -1,6 +1,7 @@
 """Municipality / province name -> Italian region, from ISTAT's list of municipalities (CC BY)."""
 import csv
 import os
+import re
 import unicodedata
 
 REF = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ref", "comuni.csv")
@@ -12,6 +13,7 @@ def norm(s):
 
 
 PROV_LABEL = {}  # normalized ISTAT province name -> display name
+NAME = {}  # normalized comune name -> its ISTAT spellings ("MONDOVI'" -> {"Mondovì"}; "PATERNO" -> {"Paterno", "Paternò"})
 
 
 def _load():
@@ -25,6 +27,7 @@ def _load():
             region, prov = r[10].strip(), r[11].strip()
             # names like "Trentino-Alto Adige/Südtirol": keep the Italian part
             region, label = region.split("/")[0], prov.split("/")[0]
+            NAME.setdefault(norm(r[6]), set()).add(r[6].strip())
             for name in {r[6], r[5]}:
                 by_comune.setdefault(norm(name), set()).add((region, norm(prov)))
             by_code[r[4].strip()] = norm(r[6])
@@ -41,6 +44,17 @@ _PROV_ALIAS = {"BOLZANO": "BOLZANO/BOZEN", "AOSTA": "VALLE D AOSTA/VALLEE D AOST
                "FORLI CESENA": "FORLI CESENA", "PESARO E URBINO": "PESARO E URBINO",
                "CARBONIA IGLESIAS": "SUD SARDEGNA", "MEDIO CAMPIDANO": "SUD SARDEGNA",
                "OGLIASTRA": "NUORO", "OLBIA TEMPIO": "SASSARI"}
+
+
+def comune_name(s):
+    """A place as ISTAT spells it; otherwise title case with the joining words small ("Rocca di Neto")."""
+    accent = lambda x: bool(re.search(r"[àèéìòù]$|'$", x.strip().lower()))
+    names = list(NAME.get(norm(s), ()))
+    if len(names) > 1:  # Paterno (PZ) and Paternò (CT): the source's accent decides
+        names = [n for n in names if accent(n) == accent(s)]
+    if len(names) == 1:
+        return names[0]
+    return re.sub(r"(?<=\s)(Di|Del|Della|Dello|Dei|Degli|Delle|Sul|Sulla|In|Al|E)(?=\s)", lambda m: m.group(1).lower(), s.title())
 
 
 def place(comune, provincia):
