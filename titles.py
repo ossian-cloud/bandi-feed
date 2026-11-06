@@ -68,7 +68,9 @@ ACRONYMS = {"ASL", "ASP", "AOU", "ASST", "ATS", "AUSL", "ULSS", "IRCCS", "INPS",
             "CUC", "SUA", "ARPAL", "ARPAE", "ARPAC", "PNRR", "CIS", "CUP", "CIG", "DPI", "TPL", "ICT", "PON", "POR",
             "FESR", "FSE", "FSC", "ZES", "ERP", "RSA", "PEBA", "HVAC", "LED", "GPL", "PUMS", "PSR", "CED", "CNR", "ENEA",
             "INFN", "INAF", "ISS", "ERSU", "ATO", "TARI", "IMU", "CRI", "ZSC", "ZPS", "SPA", "SRL", "SCARL", "UE", "ATI",
-            "RTI", "RUP", "DL", "PEC", "SIT", "NUE", "CSE", "CSP", "PFTE", "UOC", "UOS", "TAC", "RMN", "PET", "CUAF", "SPV", "CIPE", "CIPESS"}
+            "RTI", "RUP", "DL", "PEC", "SIT", "NUE", "CSE", "CSP", "PFTE", "UOC", "UOS", "TAC", "RMN", "PET", "CUAF", "SPV", "CIPE", "CIPESS",
+            "RCA", "RCT", "RCO", "IVA", "PSC", "OEPV", "CER", "CAM", "DUVRI", "CSA", "PEF", "PNC", "FEASR", "FEAMPA", "ZTL",
+            "GNL", "SPID", "CIE"}
 
 
 def upperish(s):
