@@ -7,11 +7,13 @@ Deactivated notices are dropped, except one whose rettifica is created but not y
 """
 import argparse
 import datetime as dt
+import html
 import json
 import os
 import re
 import sys
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 
@@ -89,7 +91,19 @@ def subject(md):
     desc, title = (raw or "").strip(), (md.get("titolo") or "").strip()
     if title and (not desc or (len(desc) < 90 and PLACEHOLDER.search(desc)) or (len(desc) < 15 and len(title) > len(desc))):
         return title
+    if title and _letters(desc) == _letters(title) and _marks(title) > _marks(desc):  # 'qualita', 'dellimpianto'
+        return title
     return raw or md.get("titolo")
+
+
+def _letters(s):
+    s = unicodedata.normalize("NFKD", html.unescape(s)).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def _marks(s):
+    """Accented letters and apostrophes: what a description typed without them has lost."""
+    return len(re.findall(r"[àèéìòùÀÈÉÌÒÙ'’]", html.unescape(s)))
 
 
 def slim(item, template):

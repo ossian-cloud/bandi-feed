@@ -582,7 +582,7 @@ NOTICE_FIELDS = [  # (column, description) for dati/avvisi-aperti.csv, documente
     ("tipo", "Tipo di avviso (Bando di gara, Avviso di preinformazione, Indagine di mercato…)"),
     ("rettifica", "1 se l'avviso è una rettifica di uno precedente, altrimenti 0"),
     ("procedura", "Tipo di procedura (Aperta, Ristretta, Negoziata…), se indicato"),
-    ("oggetto", "Oggetto dell'appalto come sulla piattaforma (spazi normalizzati); se la descrizione è solo un rimando («Si veda documentazione di gara») o pochi caratteri, il titolo dell'avviso"),
+    ("oggetto", "Oggetto dell'appalto come sulla piattaforma (spazi normalizzati); se la descrizione è solo un rimando («Si veda documentazione di gara») o pochi caratteri, il titolo dell'avviso; il titolo anche quando è lo stesso testo della descrizione ma con accenti e apostrofi che la descrizione ha perso"),
     ("enti", "Stazioni appaltanti, separate da «|»"),
     ("cf_enti", "Codici fiscali delle stazioni appaltanti, nello stesso ordine, separati da «|»; per alcuni enti senza codice fiscale è un codice interno ANAC che inizia con «CFAVCP-»"),
     ("regioni", "Regioni dei lotti, separate da «|»"),
@@ -617,6 +617,7 @@ LOT_FIELDS = [  # (column, description) for dati/lotti-aperti.csv
 ]
 # Changes to the CSV columns, newest first, shown on dati.html. Rule: never rename or remove a column; add new ones at the end.
 CSV_CHANGES = [
+    ("2026-11-06", "<code>oggetto</code>: per gli avvisi scaricati da oggi, il titolo dell'avviso quando è la descrizione stessa con gli accenti e gli apostrofi che la descrizione ha perso («qualita» → «qualità»). Nessuna colonna cambiata."),
     ("2026-11-06", "<code>scadenza</code>: una scadenza che la piattaforma scrive come mezzanotte UTC esatta (una data senza ora) diventa le 23:59 di quel giorno, ora di Roma, come le date senza ora dei lotti; prima era un'ora inventata, le 01:00."),
     ("2026-10-27", "<code>scadenza</code>: quando l'avviso non ha una scadenza generale ma i lotti sì, la più lontana tra quelle dei lotti (prima restava vuota: 52 avvisi su 80). Una data senza ora vale fino alle 23:59. Nessuna colonna cambiata."),
     ("2026-10-25", "<code>datapackage.json</code>: <code>scadenza</code> ha ora il tipo data e ora (formato <code>%Y-%m-%dT%H:%M</code>, ora di Roma). Nessuna colonna cambiata."),
