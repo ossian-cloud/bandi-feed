@@ -22,8 +22,8 @@ connection with ANAC.
 - `build.py` writes one feed for all of Italy, one per type of contract, one per region and one per
   region and type, one per province, one per SOA category and one per CPV division (sector), plus an HTML index page and one page
   per region, per province, per sector and per sector in each region (from 3 open notices; indexed from 5)
-  of open notices by deadline. Feeds carry only notices whose deadline hasn't passed, and each entry title ends
-  with the deadline. Every entry links to the official notice and carries the source and licence.
+  of open notices by deadline. Feeds carry only notices whose deadline hasn't passed (at most 200 entries per
+  feed, 400 for all of Italy), and each entry title ends with the deadline. Every entry links to the official notice and carries the source and licence.
   When a notice has no `dataScadenza` but its lots have a `termine_ricezione`/`termine_invito`, the latest lot
   deadline is used (a bare date counts as the end of that day, Italian time).
 - `titles.py` makes page titles readable: it drops the procedural boilerplate in front of the real object
@@ -33,10 +33,10 @@ connection with ANAC.
   deadline of each open notice, one per procedure (the most recent notice wins, so a rettifica that
   moves the deadline moves the event). Subscribe from Google Calendar, Outlook, Apple Calendar or Thunderbird.
 - It writes `aperti.json` (open notices, one per procedure, compact rows) for `static/cerca.html`, a
-  search page that filters by words, region, province, type, sector and value entirely in the browser.
+  search page that filters by words, region, province, type, sector, minimum and maximum value (or SOA classification) entirely in the browser.
   Filters live in the URL fragment, so a search can be bookmarked; nothing is sent anywhere.
 - It writes the same open notices as CSV (`dati/avvisi-aperti.csv`, one row per procedure, and
-  `dati/lotti-aperti.csv`, one row per lot with its CIG), documented on `dati.html`. Columns are never
+  `dati/lotti-aperti.csv`, one row per lot with its CIG), documented on `dati.html` and, as a Frictionless `dati/datapackage.json`, in machine-readable form. Columns are never
   renamed or removed; new ones go at the end and are listed in `CSV_CHANGES`.
 - PVL gives each lot's CPV as an Italian label only. `ref/cpv_it.json` (CPV 2008, from the EU Publications
   Office's EU Vocabularies SPARQL endpoint, release 20260520-0) maps labels back to codes; on 2026-10-06
@@ -50,13 +50,18 @@ connection with ANAC.
 - One page per open procedure (and closed ones for 14 days, `noindex`) at `avviso/<id>.html`. The hosting caps
   the number of files, so the pages are stored in 16 gzipped JSON shards (`avviso/data/<hex>.json.gz`) and served
   by `static/avviso/page.php` through a rewrite in `static/avviso/.htaccess` (Apache). URLs look like static files.
+- Besides the feeds and the pages above, `build.py` writes the site's other pages (`zone.html`, `feed.html`,
+  `calendari.html`, `settori.html`, `dati.html`, `info.html`, and `come-ricevere.html` from `static/`, which
+  explains how to get a feed by email, in a feed reader or in a calendar), `sitemap.xml`, and `feeds.json`
+  (list of feeds with their entry counts). The page shell (header, breadcrumbs, footer) is in `layout.py`.
 - `atom.py` and `ics.py` are minimal Atom 1.0 and iCalendar writers (stdlib only).
 
 Python 3.10+, no dependencies.
 
 ```
 python3 fetch.py --days 30     # first run: backfill
-python3 build.py out/          # writes out/index.html, out/feed/*.xml, out/regione/*.html, out/provincia/*.html, out/sitemap.xml, out/calendario/*.ics
+python3 build.py out/          # writes out/index.html, out/feed/*.xml, out/regione/*.html, out/provincia/*.html, out/settore/*.html,
+                               # out/avviso/, out/calendario/*.ics, out/dati/*, out/aperti.json, out/sitemap.xml, ...
 ```
 
 `blocklist.txt` (one `idAvviso` per line) removes notices on request.
@@ -69,6 +74,8 @@ python3 build.py out/          # writes out/index.html, out/feed/*.xml, out/regi
   Field notes on its endpoints, notice shape and pitfalls: [docs/pvl-api.md](docs/pvl-api.md).
 - `ref/comuni.csv`: ISTAT, *Elenco dei comuni italiani*, CC BY 4.0.
 - `ref/map.json`: the PVL `/map` endpoint (ANAC, CC BY 4.0).
+- `ref/cpv_it.json`: CPV 2008 codes and Italian labels, EU Publications Office (see above).
+- `ref/place-words-excluded.txt`: my own list of place names that are also common words, used by `titles.py`.
 - Data can be late, incomplete or wrong. Always check the official notice.
 
 Code: MIT licence.
