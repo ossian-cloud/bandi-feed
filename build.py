@@ -441,6 +441,8 @@ def write_notice_pages(outdir, notices, now):
             links.append(f'<a class="btn ghost" href="{e(n["documenti"])}">Documenti di gara</a>')
         if n["ted"]:
             links.append(f'<a class="btn ghost" href="{e(n["ted"])}">Avviso europeo (TED)</a>')
+        doc_note = ("<p class=\"small\">Il link ai documenti di gara è quello indicato dall'ente nell'avviso: a volte porta alla home o al login della sua piattaforma, non direttamente alla gara.</p>\n"
+                    if n["documenti"] else "")
         follow = [f'<a class="pill" href="../provincia/{slug(pv)}.html">Bandi aperti in {e(prov_name(pv))}</a>' for _, pv in provs[:4]]
         follow += [f'<a class="pill" href="../regione/{slug(r)}.html">Bandi aperti in {e(r)}</a>' for r in regs[:3] if len(provs) != 1]
         follow += [f'<a class="pill" href="../settore/{d}.html">Settore: {e(short(CPV_DIVISIONS[d], 50))}</a>' for d in divs[:3]]
@@ -458,7 +460,7 @@ def write_notice_pages(outdir, notices, now):
 <p class="lead">{e(n["tipo_label"])} di {e(ente)}{f" · scadenza {when(n['scadenza'])}" if n["scadenza"] and not expired else ""}{f" · valore stimato {euro(total)}" if total else ""}</p>
 {status}
 <div class="cta">{" ".join(links)}</div>
-<div class="table"><table class="facts"><tbody>
+{doc_note}<div class="table"><table class="facts"><tbody>
 {facts}
 </tbody></table></div>
 {lot_html}
