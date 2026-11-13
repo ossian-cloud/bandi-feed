@@ -22,7 +22,8 @@ connection with ANAC.
 - `build.py` writes one feed for all of Italy, one per type of contract, one per region and one per
   region and type, one per province, one per SOA category and one per CPV division (sector), plus an HTML index page and one page
   per region, per province, per sector and per sector in each region (from 3 open notices; indexed from 5)
-  of open notices by deadline. Feeds carry only notices whose deadline hasn't passed (at most 200 entries per
+  of open notices by deadline. A personal tax code or a named RUP/DEC in a notice's text is replaced by
+  "[codice fiscale omesso]" / "[nome omesso]" (the notice is dropped only if something is left). Feeds carry only notices whose deadline hasn't passed (at most 200 entries per
   feed, 400 for all of Italy), and each entry title ends with the deadline. Every entry links to the official notice and carries the source and licence.
   When a notice has no `dataScadenza` but its lots have a `termine_ricezione`/`termine_invito`, the latest lot
   deadline is used (a bare date counts as the end of that day, Italian time).
