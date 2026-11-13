@@ -41,10 +41,14 @@ PERSONAL_CF = re.compile(r"\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b")
 _ROLE = (r"(?:R\.?U\.?P|D\.?E\.?C|RESPONSABILE (?:UNICO )?DEL (?:PROCEDIMENTO|PROGETTO)"
          r"|DIRETTORE (?:DEI LAVORI|DELL'ESECUZIONE(?: DEL CONTRATTO)?)|PROGETTISTA"
          r"|ING|ARCH|GEOM|DOTT(?:\.?SSA)?|SIG(?:\.?RA)?|AVV)\b\.?")
-_STOP = (r"(?!(?:PER|DI|DEL|DELLA|DELLO|DEI|DEGLI|E|ED|IL|LA|LO|I|GLI|LE|A|AL|ALLA|IN|CON|SU|DA|DAL|CHE"
-         r"|NEL|NELLA|N|NR|NUMERO|ART|COMUNE|SERVIZI?|LAVORI|FORNITURA)\b)")
+_STOP = (r"(?!(?:PER|DI|DEL|DELLA|DELLO|DELLE|DEI|DEGLI|E|ED|IL|LA|LO|I|GLI|LE|A|AL|ALLA|IN|CON|SU|DA|DAL|CHE"
+         r"|NEL|NELLA|N|NR|NUMERO|ART|COMUNE|SERVIZI?|LAVORI|FORNITURA|ASILO)\b)")
 _WORD = _STOP + r"[A-ZÀ-Ý][A-Za-zà-ÿ'’]+"
 PERSONAL_NAME = re.compile(r"(?<![A-Za-z])(?i:" + _ROLE + r")\s*[:\-–]?\s*" + _WORD + r"\s+" + _WORD)
+# the same, for redaction: the role stays, the name goes (two words, a third only if a lowercase word doesn't follow it,
+# so "RUP Mario Rossi Realizzazione del ..." keeps "Realizzazione")
+_NAME_SPAN = re.compile(r"(?<![A-Za-z])((?i:" + _ROLE + r")\s*[:\-–]?\s*)" + _WORD + r"\s+" + _WORD
+                        + r"(?:\s+" + _WORD + r"(?![A-Za-zà-ÿ'’])(?!\s+[a-zà-ÿ]))?")
 ROME = zoneinfo.ZoneInfo("Europe/Rome")
 
 REGIONS = ["Abruzzo", "Basilicata", "Calabria", "Campania", "Emilia-Romagna", "Friuli-Venezia Giulia",
@@ -197,11 +201,18 @@ def entry(n):
             "categories": cats}
 
 
+def redact(text):
+    """Remove a personal tax code or a named RUP/DEC etc. from a notice's text, so the notice can be published
+    (it used to be dropped whole: 4 open tenders on 13 Nov 2026). personal() still drops whatever this misses."""
+    text = PERSONAL_CF.sub("[codice fiscale omesso]", text)
+    return _NAME_SPAN.sub(lambda m: m.group(1) + "[nome omesso]", text)
+
+
 def clean(n):
     """Fix upstream quirks: HTML entities in free text, "end of day" deadlines sent as 23:59 UTC, odd place fields."""
-    n["oggetto"] = html.unescape(n["oggetto"]) if n["oggetto"] else n["oggetto"]
+    n["oggetto"] = redact(html.unescape(n["oggetto"])) if n["oggetto"] else n["oggetto"]
     for l in n["lotti"]:
-        l["descrizione"] = html.unescape(l["descrizione"]) if l["descrizione"] else l["descrizione"]
+        l["descrizione"] = redact(html.unescape(l["descrizione"])) if l["descrizione"] else l["descrizione"]
         l["regione"], l["prov"] = geo.place(l["comune"], l["provincia"])  # so geo.py fixes apply to stored notices
     for x in n["ente"]:
         # ANAC's registry loses "°" in names like "2° REPARTO GENIO": it arrives as "2? REPARTO"
@@ -619,6 +630,7 @@ LOT_FIELDS = [  # (column, description) for dati/lotti-aperti.csv
 ]
 # Changes to the CSV columns, newest first, shown on dati.html. Rule: never rename or remove a column; add new ones at the end.
 CSV_CHANGES = [
+    ("2026-11-13", "<code>oggetto</code>, <code>descrizione</code> dei lotti: un avviso il cui testo nomina il responsabile (RUP, DEC…) o contiene un codice fiscale personale non viene più saltato: esce con «[nome omesso]» o «[codice fiscale omesso]» al posto del dato. Nessuna colonna cambiata."),
     ("2026-11-06", "<code>oggetto</code>: per gli avvisi scaricati da oggi, il titolo dell'avviso quando è la descrizione stessa con gli accenti e gli apostrofi che la descrizione ha perso («qualita» → «qualità»). Nessuna colonna cambiata."),
     ("2026-11-06", "<code>scadenza</code>: una scadenza che la piattaforma scrive come mezzanotte UTC esatta (una data senza ora) diventa le 23:59 di quel giorno, ora di Roma, come le date senza ora dei lotti; prima era un'ora inventata, le 01:00."),
     ("2026-10-27", "<code>scadenza</code>: quando l'avviso non ha una scadenza generale ma i lotti sì, la più lontana tra quelle dei lotti (prima restava vuota: 52 avvisi su 80). Una data senza ora vale fino alle 23:59. Nessuna colonna cambiata."),
@@ -747,7 +759,7 @@ LibreOffice Calc: apri il file e scegli «Virgola» come separatore.</p>
 <ul>
 <li>Ci sono gli avvisi pubblicati sulla piattaforma negli ultimi 30 giorni e ancora aperti, cioè con la scadenza non passata e non del tutto annullati. Gli affidamenti diretti non passano dalla piattaforma e quindi non ci sono.</li>
 <li>Le province sono ricondotte da me ai nomi ISTAT, le divisioni CPV sono le prime due cifre del codice (<a href="info.html">come</a>, e nel <a href="https://github.com/ossian-cloud/bandi-feed">codice</a>); il resto è come sulla piattaforma, che può contenere errori o arrivare in ritardo.</li>
-<li>Non ci sono dati di persone: salto gli avvisi il cui testo contiene un codice fiscale personale o il nome di un responsabile. Se trovi un dato personale, scrivi a <a href="mailto:ossian@ossian.cloud">ossian@ossian.cloud</a> e lo tolgo.</li>
+<li>Non ci sono dati di persone: quando il testo di un avviso contiene un codice fiscale personale o il nome di un responsabile (RUP, direttore dei lavori…), lo sostituisco con «[codice fiscale omesso]» o «[nome omesso]»; il nome resta nell'avviso ufficiale. Se trovi un dato personale, scrivi a <a href="mailto:ossian@ossian.cloud">ossian@ossian.cloud</a> e lo tolgo.</li>
 </ul>
 </div>"""
     ld = {"@context": "https://schema.org", "@type": "Dataset", "name": "Bandi di gara aperti sulla piattaforma ANAC di pubblicità legale",
