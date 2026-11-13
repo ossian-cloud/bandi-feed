@@ -141,7 +141,10 @@ def soa(lot):
 # A contract reserved to social cooperatives / sheltered workshops (art. 61 d.lgs. 36/2023), as the object says:
 # the strongest signal for a cooperative, and otherwise visible only deep in the title.
 RESERVED = re.compile(r"riservat[oa]\b[^.;]{0,40}?(cooperativ|art\.?\s*61|operatori economici|imprese sociali|laboratori protetti)"
-                      r"|\bart\.?\s*61\b[^.;]{0,15}d\.?\s*lgs\.?[^.;]{0,8}36\b|cooperative sociali di tipo b", re.I)
+                      r"|\bart\.?\s*61\b[^.;]{0,15}d\.?\s*lgs\.?[^.;]{0,8}36\b|cooperative sociali di tipo b"
+                      # also to disadvantaged workers (l. 381/91) or to third-sector bodies (audit 13 Nov 2026)
+                      r"|riservat[oa]\b[^.;]{0,40}?(persone svantaggiate|organizzazioni di volontariato|associazioni di promozione sociale"
+                      r"|enti del terzo settore)", re.I)
 
 
 def reserved(n):
@@ -152,6 +155,26 @@ def short_object(n):
     """The object without codes and procedural boilerplate, for lists and feed titles (pages keep it whole)."""
     ente = "; ".join(x["nome"] or "" for x in n["ente"])
     return titles.sentence_case(titles.core_object(n["oggetto"] or "", ente))
+
+
+def sda(n):
+    """A sistema dinamico di acquisizione (art. 32 d.lgs. 36/2023): its "deadline" is the end of the system, years away,
+    and firms can ask to join at any time before it (audit 13 Nov 2026: shown as a plain bid deadline)."""
+    return n.get("scheda") == "ISDA1"
+
+
+SDA_NOTE = " (fine del sistema dinamico di acquisizione: si può chiedere di entrare fino ad allora)"
+LOW_VALUE = 100  # below this a total is usually a placeholder (1 €, 0,01 €) for concessions and free conventions
+
+
+def scade(n):
+    return ("aperto fino al " if sda(n) else "scade ") + deadline_day(n["scadenza"])
+
+
+def value_text(total):
+    if not total:
+        return None
+    return euro(total) + (" (cifra molto bassa, forse simbolica: vedi l'avviso ufficiale)" if total < LOW_VALUE else "")
 
 
 def entry(n):
@@ -171,7 +194,8 @@ def entry(n):
     obj = short_object(n)
     full = " ".join((n["oggetto"] or "").split())
     rows = [("Oggetto", full if obj != full else None), ("Tipo", n["tipo_label"]), ("Ente", ente), ("Procedura", n["procedura"]),
-            ("Scadenza", deadline_day(n["scadenza"])), ("Valore stimato", euro(total) if total else None),
+            ("Scadenza", deadline_day(n["scadenza"]) + (SDA_NOTE if sda(n) and n["scadenza"] else "") if n["scadenza"] else None),
+            ("Valore stimato", value_text(total)),
             ("Luogo", ", ".join(places) or None)]
     parts = ["<ul>"] + [f"<li><b>{k}:</b> {e(v)}</li>" for k, v in rows if v] + ["</ul>"]
     if len(n["lotti"]) > 1 or (n["lotti"] and n["lotti"][0]["descrizione"] != n["oggetto"]):
@@ -180,6 +204,9 @@ def entry(n):
             bits = [short(l["descrizione"], 200), l["natura"], cpv_text(l["cpv"]) if l["cpv"] else None, soa(l),
                     euro(l["valore"]) if l["valore"] else None, f"CIG {l['cig']}" if l["cig"] else None]
             parts.append("<li>" + e(" · ".join(b for b in bits if b)) + "</li>")
+        if len(n["lotti"]) > 20:
+            more = len(n["lotti"]) - 20
+            parts.append(f"<li>{'E un altro lotto' if more == 1 else f'E altri {more} lotti'}: vedi la pagina dell'avviso.</li>")
         parts.append("</ol>")
     elif n["lotti"]:
         l = n["lotti"][0]
@@ -196,7 +223,7 @@ def entry(n):
     cats += [("natura:" + slug(x), x) for x in sorted({l["natura"] for l in n["lotti"] if l["natura"]})]
     cats += [("regione:" + slug(x), x) for x in sorted({l["regione"] for l in n["lotti"] if l["regione"]})]
     pub = n["pubblicato"].replace(".000+00:00", "Z").replace("+00:00", "Z")
-    return {"id": f"tag:ossian.cloud,2026:bandi/{n['id']}", "title": prefix + short(obj, 150) + (f" · scade {deadline_day(n['scadenza'])}" if n["scadenza"] else ""),
+    return {"id": f"tag:ossian.cloud,2026:bandi/{n['id']}", "title": prefix + short(obj, 150) + (f" · {scade(n)}" if n["scadenza"] else ""),
             "link": n["link"], "published": pub, "updated": pub, "summary_html": "".join(parts),
             "categories": cats}
 
@@ -426,8 +453,8 @@ def write_notice_pages(outdir, notices, now):
                 ("Appalto riservato", "Sì, secondo l'oggetto (per esempio a cooperative sociali, art. 61 d.lgs. 36/2023): chi può partecipare lo dice il bando." if reserved(n) else None),
                 ("Ente", ente), ("Procedura", n["procedura"]),
                 ("Pubblicato", day(n["pubblicato"]) if n["pubblicato"] else None),  # PVL gives a date only; its time is a placeholder
-                ("Scadenza", when(n["scadenza"]) if n["scadenza"] else "non indicata"),
-                ("Valore stimato", euro(total) if total else None),
+                ("Scadenza", when(n["scadenza"]) + (SDA_NOTE if sda(n) else "") if n["scadenza"] else "non indicata"),
+                ("Valore stimato", value_text(total)),
                 ("Luogo", ", ".join(places) + (f" ({', '.join(regs)})" if regs else "") if places else ", ".join(regs) or None),
                 ("CIG", ", ".join(l["cig"] for l in lots if l["cig"]) if len(lots) <= 3 else None)]
         facts = "\n".join(f"<tr><th>{k}</th><td>{e(v)}</td></tr>" for k, v in rows if v)
@@ -468,7 +495,7 @@ def write_notice_pages(outdir, notices, now):
             crumb = [(f"regione/{slug(regs[0])}.html", regs[0])] + crumb
         body = f"""{layout.crumbs(crumb, 1)}
 <h1 class="long">{e(titles.cut(titles.sentence_case(" ".join(n["oggetto"].split())), 250) if n["oggetto"] else "Avviso senza oggetto")}</h1>
-<p class="lead">{e(n["tipo_label"])} di {e(ente)}{f" · scadenza {when(n['scadenza'])}" if n["scadenza"] and not expired else ""}{f" · valore stimato {euro(total)}" if total else ""}</p>
+<p class="lead">{e(n["tipo_label"])} di {e(ente)}{(f" · aperto fino al {when(n['scadenza'])}" if sda(n) else f" · scadenza {when(n['scadenza'])}") if n["scadenza"] and not expired else ""}{f" · valore stimato {euro(total)}" if total >= LOW_VALUE else ""}</p>
 {status}
 <div class="cta">{" ".join(links)}</div>
 {doc_note}<div class="table"><table class="facts"><tbody>
@@ -854,7 +881,7 @@ def notice_items(items, limit=None):
     for n in items:
         total = sum(l["valore"] or 0 for l in n["lotti"])
         nat = ", ".join(sorted({l["natura"] for l in n["lotti"] if l["natura"]}))
-        meta = [("scade " + deadline_day(n["scadenza"])) if n["scadenza"] else "senza scadenza indicata",
+        meta = [scade(n) if n["scadenza"] else "senza scadenza indicata",
                 "; ".join(x["nome"] or "" for x in n["ente"]), n["tipo_label"], nat,
                 euro(total) if total else None]
         lis.append(f'<li><a href="{e(href(n, 1))}">{e(titles.cut(short_object(n), 180))}</a>'
@@ -1129,7 +1156,7 @@ in ritardo o sbagliati: prima di partecipare a una gara controlla sempre l'avvis
 <h2>Ultimi avvisi pubblicati</h2>
 <ul class="items">
 {chr(10).join(f'<li><a href="{e(href(n))}">{e(titles.cut(titles.sentence_case(" ".join((n["oggetto"] or "").split())), 160))}</a><small>{e("; ".join(x["nome"] or "" for x in n["ente"]))} · {e(n["tipo_label"])}'
-              + (f" · scade {deadline_day(n['scadenza'])}" if n["scadenza"] else "") + "</small></li>" for n in notices[:8])}
+              + (f" · {scade(n)}" if n["scadenza"] else "") + "</small></li>" for n in notices[:8])}
 </ul>
 <p><a href="feed/tutti.xml">Feed di tutta Italia</a> · <a href="cerca.html">tutti i bandi aperti</a> · <a href="dati.html">tutti in un file CSV</a></p>"""
     emit_page(outdir, "index.html", "Bandi di gara aperti: feed, calendari e ricerca gratuiti",
