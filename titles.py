@@ -112,6 +112,8 @@ def name_case(s):
             out.append(w)
         elif re.fullmatch(r"«[A-Z]{2,5}»|\([A-Z]{2,5}\)", w):  # «VC», (ASST): a code on its own
             out.append(w)
+        elif re.fullmatch(r"[IVX]{2,6}", w):  # roman numerals: "Papa Giovanni XXIII", "Federico II" (13 Nov 2026 audit)
+            out.append(w)
         elif lw in SMALL and i > 0:
             out.append(lw)
         else:
