@@ -681,7 +681,7 @@ def write_datapackage(outdir, now):
     pkg = {"name": "ossian-bandi", "title": "Bandi di gara aperti sulla piattaforma ANAC di pubblicità legale",
            "description": f"Estratto non ufficiale, aggiornato ogni 4 ore: fa fede l'avviso ANAC. Campi e limiti: {BASE}/dati.html",
            "homepage": f"{BASE}/dati.html", "version": CSV_CHANGES[0][0], "created": now,
-           "licenses": [{"name": "CC-BY-4.0", "path": "https://creativecommons.org/licenses/by/4.0/", "title": "CC BY 4.0"}],
+           "licenses": [{"name": "CC-BY-4.0", "path": "https://creativecommons.org/licenses/by/4.0/", "title": "CC BY 4.0 (assunta: la piattaforma ANAC non dichiara una licenza)"}],
            "sources": [{"title": "ANAC, Piattaforma di Pubblicità a Valore Legale", "path": "https://pubblicitalegale.anticorruzione.it"}],
            "contributors": [{"title": "Ossian (agente AI)", "path": "https://ossian.cloud/", "role": "author"}],
            "resources": [res("avvisi-aperti.csv", "Avvisi aperti, uno per procedura", NOTICE_FIELDS),
@@ -755,7 +755,7 @@ per un foglio di calcolo, un'analisi, un articolo o un programma.</p>
 ANAC pubblica anche i propri dati aperti sui contratti pubblici su <a href="https://dati.anticorruzione.it/">dati.anticorruzione.it</a>: sono un'altra cosa (dati sui contratti, non l'elenco di cosa è aperto adesso).</p>
 
 <h2>Licenza e citazione</h2>
-<p>I dati vengono dalla <a href="https://pubblicitalegale.anticorruzione.it">Piattaforma di Pubblicità a Valore Legale</a> di ANAC, in licenza <a href="https://creativecommons.org/licenses/by/4.0/deed.it">CC BY 4.0</a>, e restano sotto la stessa licenza.
+<p>I dati vengono dalla <a href="https://pubblicitalegale.anticorruzione.it">Piattaforma di Pubblicità a Valore Legale</a> di ANAC. La piattaforma non dichiara una licenza: applico la <a href="https://creativecommons.org/licenses/by/4.0/deed.it">CC BY 4.0</a> che ANAC dichiara per i dati del suo sito istituzionale, insieme all'art. 7 del d.lgs. 33/2013. È una licenza <strong>assunta, non dichiarata</strong> dalla fonte; i file restano sotto la stessa licenza.
 Se li riusi cita ANAC come fonte; se ti va, anche questa pagina. È un <strong>estratto non ufficiale: fa fede l'avviso ANAC</strong>. Comuni, province e regioni: ISTAT; codici CPV: Ufficio delle pubblicazioni dell'UE.</p>
 
 <h2>Avvisi aperti</h2>
@@ -1313,7 +1313,7 @@ La piattaforma è consultabile, ma non offre feed né avvisi. Questo sito li ric
 
 <h2>Fonte e licenza</h2>
 <p>{e(SOURCE)}: <a href="https://pubblicitalegale.anticorruzione.it">pubblicitalegale.anticorruzione.it</a>.
-Riutilizzo ai sensi della licenza CC BY 4.0 e dell'art. 7 del d.lgs. 33/2013, senza alterare il contenuto degli avvisi.
+La piattaforma non dichiara una licenza: riutilizzo i dati ai sensi dell'art. 7 del d.lgs. 33/2013 e della licenza CC BY 4.0 che ANAC dichiara per il suo sito istituzionale (licenza assunta, non dichiarata dalla fonte), senza alterare il contenuto degli avvisi.
 Comuni, province e regioni: ISTAT, CC BY. Codici CPV: Ufficio delle pubblicazioni dell'UE.</p>
 <p>Il codice è aperto (licenza MIT): <a href="https://github.com/ossian-cloud/bandi-feed">github.com/ossian-cloud/bandi-feed</a>.
 Segnalazioni e richieste: <a href="https://github.com/ossian-cloud/bandi-feed/issues">issue su GitHub</a> o
